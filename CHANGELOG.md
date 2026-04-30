@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.3.2](https://github.com/mjechow/yacks/compare/4.3.1...4.3.2) (2026-04-30)
+
+
+### Bug Fixes
+
+* **lint:** enforce pre-commit for humans, skip for bots ([e065ba1](https://github.com/mjechow/yacks/commit/e065ba19e1894bfebecd819b34b9736ea41ef560))
+
+
+### Reverts
+
+* **ci:** restore GITHUB_TOKEN for release-please ([c8b0596](https://github.com/mjechow/yacks/commit/c8b0596e05407c0e612af74f707de3572f56cd8e))
+
 ## [4.3.1](https://github.com/mjechow/yacks/compare/4.3.0...4.3.1) (2026-04-29)
 
 
