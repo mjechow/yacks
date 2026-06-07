@@ -52,6 +52,7 @@ usage() {
   printf "Ubuntu / Linux Mint desktops.%s\n\n" "${_ver:+ Version $_ver}"
   printf "Usage: %s [OPTION]\n\n" "$(basename "$0")"
   printf "  -c, --clean      Archive debs to old/, reset kernel source\n"
+  printf "  -l, --list       List all installed kernels\n"
   printf "  -p, --purge-old  Remove old installed kernels (keeps newest 2 + distro)\n"
   printf "  -t, --tools      Build and install cpupower (requires sudo)\n"
   printf "  -h, --help       Show this help\n"
@@ -60,16 +61,31 @@ usage() {
 
 case "${1:-}" in
   -c) set -- "--clean" ;;
+  -l) set -- "--list" ;;
   -p) set -- "--purge-old" ;;
   -t) set -- "--tools" ;;
   -h) set -- "--help" ;;
-  --clean | --purge-old | --tools | --help) ;;
+  --clean | --list | --purge-old | --tools | --help) ;;
   --* | -* | ?*) printf "ERROR: Unbekannte Option: %s\n\n" "${1}" >&2; usage >&2; exit 1 ;;
 esac
 
 # --- Hilfe -------------------------------------------------------------------
 if [[ "${1:-}" == "--help" ]]; then
   usage; exit 0
+fi
+
+# --- List installed kernels --------------------------------------------------
+if [[ "${1:-}" == "--list" ]]; then
+  running="$(uname -r)"
+  { dpkg -l "linux-image-*" 2>/dev/null || true; } | awk '/^ii/{print $2}' | sort -V | while IFS= read -r pkg; do
+    ver="${pkg#linux-image-}"
+    if [[ "$ver" == "$running" ]]; then
+      printf "  %s  (running)\n" "$pkg"
+    else
+      printf "  %s\n" "$pkg"
+    fi
+  done
+  exit 0
 fi
 
 # --- Clean mode --------------------------------------------------------------

@@ -87,7 +87,8 @@ avoid interfering with your regular ccache.
 Additional commands:
 
 ```bash
-./buildKernel.sh -h            # show help (--hilfe)
+./buildKernel.sh -h            # show help (--help)
+./buildKernel.sh -l            # list all installed kernels, marks the running one (--list)
 ./buildKernel.sh -c            # clean build artifacts, archive debs to old/ (--clean)
 ./buildKernel.sh -p            # remove old installed kernels, keeps newest 2 + distro (--purge-old)
 ./buildKernel.sh -t            # build and install cpupower, one-time, requires sudo (--tools)
