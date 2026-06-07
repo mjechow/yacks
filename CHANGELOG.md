@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.1.0](https://github.com/mjechow/yacks/compare/5.0.1...5.1.0) (2026-06-07)
+
+
+### Features
+
+* add -l/--list option to show all installed kernels ([e6b3f8f](https://github.com/mjechow/yacks/commit/e6b3f8fd06c8502d274979237375b7e5847a4fad))
+
 ## [5.0.1](https://github.com/mjechow/yacks/compare/5.0.0...5.0.1) (2026-05-23)
 
 
