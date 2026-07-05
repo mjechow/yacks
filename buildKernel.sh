@@ -6,11 +6,11 @@
 
 set -euo pipefail
 
-DEBUG=0
-VERBOSITY=0
 # optional build revision suffix; if set, appended to LOCALVERSION as -$REV (e.g. REV=2 → username-hostname-2)
 # use a date (e.g. 20250524) or incrementing number so dpkg sorts newer builds higher than older ones
 REV= # $(date +%Y%m%d)
+DEBUG=0
+VERBOSITY=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
