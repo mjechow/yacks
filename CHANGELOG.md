@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.1.1](https://github.com/mjechow/yacks/compare/5.1.0...5.1.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* **config:** disable PINCTRL_STMFX on desktop config ([2d5e762](https://github.com/mjechow/yacks/commit/2d5e7622a9f0a11e64227e13a8894415470a44af))
+
 ## [5.1.0](https://github.com/mjechow/yacks/compare/5.0.1...5.1.0) (2026-06-07)
 
 
