@@ -144,9 +144,9 @@ related options so only the relevant files need to change when hardware changes.
 | `gpu-amd.config` | RX 9070 (RDNA 4): enables amdgpu + ROCm/HSA |
 | `sound-realtek.config` | HDA Intel + Realtek ALC4080 (3.5mm) + USB audio; disables unused HDA codecs, AMD APU audio, Intel SOC audio |
 | `sound-hdmi.config` | HDMI/DP audio codecs for AMD (ATI); comment out to disable all display audio |
-| `network-realtek.config` | RTL8125 2.5GbE, Bluetooth; disables WiFi, all other NIC vendors, legacy USB network adapters; BBR/FQ/Cake |
+| `network-realtek.config` | RTL8125 2.5GbE, Bluetooth; disables WiFi, all other NIC vendors, Fujitsu Extended Socket, legacy USB network adapters; BBR/FQ/Cake |
 | `storage.config` | NVMe, SATA, SCSI, filesystems; disables PATA, unused SATA controllers, exotic FS, enterprise HBA/FCoE |
-| `hardware-desktop.config` | USB, HID, SD card readers, UVC webcam, watchdog off, no-AMD crypto accelerators; disables laptop touchpad drivers and PCIe card readers |
+| `hardware-desktop.config` | USB, HID, SD card readers, UVC webcam, watchdog off, no-AMD crypto accelerators; disables laptop touchpad drivers, PCIe card readers, Fujitsu laptop/tablet platform drivers |
 
 Fragments are applied in the order listed; later fragments take precedence on
 conflicts. `merge_config.sh` runs `make olddefconfig` after the merge, so
