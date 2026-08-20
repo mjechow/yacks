@@ -111,6 +111,7 @@ Additional commands:
 
 To reduce build time and kernel footprint, the following are disabled:
 
+<!-- pyml disable line-length -->
 | Category | Disabled |
 | --- | --- |
 | GPU drivers | Intel (i915, Xe), Nouveau, legacy AMD radeon |
@@ -130,6 +131,7 @@ To reduce build time and kernel footprint, the following are disabled:
 | Accessibility | Braille console, Speakup screen reader |
 | Sound | AMD APU audio (Raven, Renoir, Van Gogh, Yellow Carp, Phoenix, Rembrandt — 7950X3D has no iGPU); all unused HDA codecs; Intel SOC audio |
 | Misc | Hardware watchdog, NTB, FPGA |
+<!-- pyml enable line-length -->
 
 ## Config Fragments
 
@@ -137,6 +139,7 @@ Kernel config customizations are split into composable fragments under
 `fragments/`, merged by `scripts/kconfig/merge_config.sh`. Each fragment groups
 related options so only the relevant files need to change when hardware changes.
 
+<!-- pyml disable line-length -->
 | Fragment | Contents |
 | --- | --- |
 | `base.config` | Compiler/LTO, zstd, zswap, scheduling, preemption, timer, security, debug, module signing |
@@ -147,6 +150,7 @@ related options so only the relevant files need to change when hardware changes.
 | `network-realtek.config` | RTL8125 2.5GbE, Bluetooth; disables WiFi, all other NIC vendors, Fujitsu Extended Socket, legacy USB network adapters; BBR/FQ/Cake |
 | `storage.config` | NVMe, SATA, SCSI, filesystems; disables PATA, unused SATA controllers, exotic FS, enterprise HBA/FCoE |
 | `hardware-desktop.config` | USB, HID, SD card readers, UVC webcam, watchdog off, no-AMD crypto accelerators; disables laptop touchpad drivers, PCIe card readers, Fujitsu laptop/tablet platform drivers |
+<!-- pyml enable line-length -->
 
 Fragments are applied in the order listed; later fragments take precedence on
 conflicts. `merge_config.sh` runs `make olddefconfig` after the merge, so
