@@ -11,3 +11,5 @@ LOCAL.md
 ccache_kernel/
 linux/
 old/
+
+tools/knobbench
