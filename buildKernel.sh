@@ -224,6 +224,17 @@ FRAGMENT_FILES=(
   "${FRAGMENTS_DIR}/hardware-desktop.config"
 )
 
+info "Checking fragment symbols against the Kconfig tree..."
+# merge_config.sh -m -Q stays silent about symbols that do not exist in this
+# kernel version, and the diff check below never sees them either because no
+# transition happens. Such entries are silent no-ops — catch them here.
+_frag_syms=$(mktemp) _kconf_syms=$(mktemp)
+grep -hoE 'CONFIG_[A-Z0-9_]+' "${FRAGMENT_FILES[@]}" | sort -u > "$_frag_syms"
+grep -rhoE '^[[:space:]]*(menu)?config[[:space:]]+[A-Z0-9_]+' . \
+  --include=Kconfig --include='Kconfig.*' | awk '{print "CONFIG_"$NF}' | sort -u > "$_kconf_syms"
+UNKNOWN_SYMS=$(comm -23 "$_frag_syms" "$_kconf_syms")
+rm -f "$_frag_syms" "$_kconf_syms"
+
 info "Merging config fragments..."
 # -m = merge only; we run olddefconfig ourselves afterward.
 # Without -m, merge_config.sh runs alldefconfig and validates every value in the
@@ -250,6 +261,12 @@ git --no-pager log -1 --pretty=oneline
 info "Target system: $(uname -a)"
 info "Kernel version: ${KERNEL_VERSION}"
 echo
+
+if [[ -n "$UNKNOWN_SYMS" ]]; then
+  warn "Unknown Kconfig symbols in fragments (renamed or removed — these do nothing):"
+  echo "$UNKNOWN_SYMS"
+  echo
+fi
 
 DIFF_FILE="$SCRIPT_DIR/config-$KERNEL_VERSION-$LOCALVERSION.diff"
 FLIPS=$(grep -E ' (n -> [ym]|[ym] -> n)$' "$DIFF_FILE" || true)
