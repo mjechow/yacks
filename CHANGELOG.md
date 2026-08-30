@@ -1,5 +1,29 @@
 # Changelog
 
+## [5.2.0](https://github.com/mjechow/yacks/compare/5.1.1...5.2.0) (2026-08-30)
+
+
+### Features
+
+* **base:** build NTSYNC in for Wine and Proton ([d265003](https://github.com/mjechow/yacks/commit/d2650036ed1ae17cc9bc6077666669150a33b134))
+* **build:** warn about unknown Kconfig symbols in fragments ([cb915df](https://github.com/mjechow/yacks/commit/cb915df7662221bb5502f0d78c381fa4c23a3829))
+* **sound:** drop HDA and ASoC, keep USB audio only ([4a9e8aa](https://github.com/mjechow/yacks/commit/4a9e8aa8c5223eef501290b8bf434e95ee17f799))
+* **tools:** add knobbench for comparing runtime kernel knobs ([847fa90](https://github.com/mjechow/yacks/commit/847fa900c49a3d09e10dff87fc3b5dbdac57a36c))
+
+
+### Bug Fixes
+
+* **base:** disable unused KEXEC_HANDOVER ([86a0386](https://github.com/mjechow/yacks/commit/86a0386f8706d640c75dd1b3f86bed692f2177cd))
+* **base:** sign all modules to clear the unsigned-module taint ([5c89236](https://github.com/mjechow/yacks/commit/5c892366dc7c74eb3662c2b5c9f2426b9e2f6070))
+* **cpu:** pin the amd-pstate operating mode ([3c8dbda](https://github.com/mjechow/yacks/commit/3c8dbda6468c375f5ef80a35ee7be5409e925265))
+* **fragments:** correct renamed and removed Kconfig symbols ([cd2b724](https://github.com/mjechow/yacks/commit/cd2b7244605f4105b142faf8122ce2911937aef0))
+* **hardware:** disable the MMC stack and game controller drivers ([efe18b5](https://github.com/mjechow/yacks/commit/efe18b50363f807747bada947a25fc4bbf96acb0))
+
+
+### Performance Improvements
+
+* **base:** default transparent hugepages to always ([9c8c0c4](https://github.com/mjechow/yacks/commit/9c8c0c45846be98e0e0027f7e5f0fb592e17d7d9))
+
 ## [5.1.1](https://github.com/mjechow/yacks/compare/5.1.0...5.1.1) (2026-07-05)
 
 
