@@ -9,9 +9,7 @@ This file provides guidance to Claude Code when working in this repository.
 
 ## Constraints
 
-- If answer confidence is below 66%, name what's missing to reach at least 80%
 - Always document changes in README.md or the relevant file in english language
-- Never write in CLAUDE.md if the information can be extracted from other sources
 
 ## Gotchas
 
