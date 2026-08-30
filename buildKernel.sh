@@ -217,7 +217,7 @@ FRAGMENT_FILES=(
   "${FRAGMENTS_DIR}/base.config"
   "${FRAGMENTS_DIR}/cpu-amd-zen4.config"
   "${FRAGMENTS_DIR}/gpu-amd.config"
-  "${FRAGMENTS_DIR}/sound-realtek.config"
+  "${FRAGMENTS_DIR}/sound-usb.config"
   "${FRAGMENTS_DIR}/sound-hdmi.config"
   "${FRAGMENTS_DIR}/network-realtek.config"
   "${FRAGMENTS_DIR}/storage.config"
