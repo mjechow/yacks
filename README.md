@@ -37,13 +37,26 @@ the full hardware profile.
 
 ## Firmware
 
-The Realtek RTL8125 NIC (r8169 driver) requires firmware files not yet
-included in the `linux-firmware` package. Download and install manually:
+No manual firmware installation is needed. The onboard NIC identifies as
+`RTL8125B, XID 641` and requests `rtl_nic/rtl8125b-2.fw`, which ships in the
+`linux-firmware` package.
+
+Every `update-initramfs` run nevertheless prints:
+
+```text
+W: Possible missing firmware /lib/firmware/rtl_nic/rtl8125cp-1.fw for built-in driver r8169
+```
+
+This is expected and needs no action. `r8169` declares 29 firmware files via
+`MODULE_FIRMWARE` — one per supported chip — and because `CONFIG_R8169=y` builds
+it in, `initramfs-tools` cannot resolve them as module dependencies and warns
+about every file it does not find. `rtl8125cp-1.fw` belongs to the RTL8125CP,
+a different chip; fetching it manually would be as pointless as it was for
+`rtl8125k-1.fw`, because this card never requests it. Before treating any such
+warning as a real gap, check the XID the driver reports:
 
 ```bash
-wget https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/rtl_nic/rtl8125k-1.fw
-wget https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/rtl_nic/rtl9151a-1.fw
-sudo cp rtl8125k-1.fw rtl9151a-1.fw /lib/firmware/rtl_nic/
+dmesg | grep r8169          # look for "RTL8125B, ..., XID 641"
 ```
 
 ## Requirements
@@ -56,12 +69,13 @@ sudo cp rtl8125k-1.fw rtl9151a-1.fw /lib/firmware/rtl_nic/
 
 ## Quick Start
 
-Using an LTS kernel version is recommended for stability and longer support.
-Currently tested against the `linux-rolling-lts` branch.
+Currently tested against the `linux-rolling-stable` branch, which always tracks
+the newest stable series. Use `linux-rolling-lts` instead if you prefer longer
+support over newer features — the build itself works with either.
 
 ```bash
 # Clone the kernel sources next to the scripts
-git clone --branch linux-rolling-lts \
+git clone --branch linux-rolling-stable \
   https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
 
 cd ..
@@ -96,10 +110,19 @@ Additional commands:
 
 ## Key Optimizations
 
-- **CPU tuning:** `-march=znver4 -mtune=znver4` via KCFLAGS
+- **CPU tuning:** `-march=znver4 -mtune=znver4` via KCFLAGS. The Kconfig x86-64
+  processor family choice was removed in 6.15, so KCFLAGS is the only remaining
+  route; `X86_NATIVE_CPU` is deliberately off because it hardcodes
+  `-march=native` on the build host.
+- **CPU frequency:** `amd_pstate` in active mode — the driver registers as
+  `amd-pstate-epp` and the firmware picks frequencies via the
+  `energy_performance_preference`, so the compiled-in schedutil default only
+  applies if the mode is switched to passive/guided.
 - **Preemption:** Full preempt with `PREEMPT_DYNAMIC` + 1000 Hz timer
 - **Scheduler:** `SCHED_AUTOGROUP` (prevents `make -j32` from starving the desktop)
-- **Memory:** THP with MADVISE, Multi-Gen LRU, PER_VMA_LOCK, NUMA balancing
+- **Memory:** THP with ALWAYS, Multi-Gen LRU, PER_VMA_LOCK
+- **Wine/Proton:** `NTSYNC` built in, so `/dev/ntsync` always exists — as a
+  module nothing autoloads it and Wine silently falls back to esync/fsync
 - **Swap:** zswap with zstd compressor (default on)
 - **Network:** BBR congestion control, FQ/FQ_CODEL/CAKE qdisc
 - **I/O:** kernel default (`none`) for NVMe — no scheduler tuning needed
@@ -124,12 +147,13 @@ To reduce build time and kernel footprint, the following are disabled:
 | Protocols | IPX, AppleTalk, X.25, DECnet, ATM, TIPC, DCCP, RDS, SCTP, L2TP, WireGuard (VPN handled by Fritz!Box router) |
 | Virtualisation | Xen and Hyper-V guest support, staging drivers |
 | Media | TV tuners, DVB, radio, SDR, IR remote controls — UVC webcam kept |
-| Input | Touchscreen, tablet/pen, game controllers (joystick, XInput, PlayStation, Steam), laptop touchpad drivers (ALPS, Elan, Synaptics, Cypress, TrackPoint, FocalTech) |
+| Input | Touchscreen, tablet/pen, the whole joystick/gamepad subsystem (`INPUT_JOYSTICK`, joydev, XInput) and the HID gamepad drivers (PlayStation, Steam, Sony, Nintendo, Microsoft, Thrustmaster, Saitek, …) plus Logitech force-feedback; laptop touchpad drivers (ALPS, Elan, Synaptics, Cypress, TrackPoint, FocalTech). `HID_LOGITECH` itself stays enabled — `HID_LOGITECH_DJ` (Logi Bolt receiver) depends on it |
 | Crypto HW | Non-AMD accelerators: Intel QAT, Marvell/Cavium NITROX+ZIP, VIA Padlock, Atmel secure elements |
 | Platform | ChromeOS, Surface, Mellanox platform drivers; laptop PCIe card readers (Realtek, Alcor) |
 | Industrial / embedded | IIO (sensors), MTD (flash), I3C, GNSS/GPS, CXL, DCA, Greybus, COMEDI, HSI |
 | Accessibility | Braille console, Speakup screen reader |
-| Sound | AMD APU audio (Raven, Renoir, Van Gogh, Yellow Carp, Phoenix, Rembrandt — 7950X3D has no iGPU); all unused HDA codecs; Intel SOC audio |
+| Sound | The whole HDA stack and all of ASoC (`SND_SOC`) — every audio device here is USB, so HDMI/DP display audio, Intel SOF/AVS and AMD ACP all go with one symbol. Drops sound modules from 629 to 105 |
+| Storage | MMC/SD stack — the card readers are USB mass storage |
 | Misc | Hardware watchdog, NTB, FPGA |
 <!-- pyml enable line-length -->
 
@@ -145,8 +169,8 @@ related options so only the relevant files need to change when hardware changes.
 | `base.config` | Compiler/LTO, zstd, zswap, scheduling, preemption, timer, security, debug, module signing |
 | `cpu-amd-zen4.config` | Ryzen 9 7950X3D: P-state, EDAC, SMBus, AES-NI, ACPI, PCIe, hardware monitoring |
 | `gpu-amd.config` | RX 9070 (RDNA 4): enables amdgpu + ROCm/HSA |
-| `sound-realtek.config` | HDA Intel + Realtek ALC4080 (3.5mm) + USB audio; disables unused HDA codecs, AMD APU audio, Intel SOC audio |
-| `sound-hdmi.config` | HDMI/DP audio codecs for AMD (ATI); comment out to disable all display audio |
+| `sound-usb.config` | The audio actually in use: USB only — the ALC4080 is wired to an internal USB port on X670E, not to the HDA bus |
+| `sound-hdmi.config` | Display and APU audio switched off, for both GPUs; also the iGPU's entire kernel-config surface. Swap the negatives to re-enable HDMI/DP sound |
 | `network-realtek.config` | RTL8125 2.5GbE, Bluetooth; disables WiFi, all other NIC vendors, Fujitsu Extended Socket, legacy USB network adapters; BBR/FQ/Cake |
 | `storage.config` | NVMe, SATA, SCSI, filesystems; disables PATA, unused SATA controllers, exotic FS, enterprise HBA/FCoE |
 | `hardware-desktop.config` | USB, HID, SD card readers, UVC webcam, watchdog off, no-AMD crypto accelerators; disables laptop touchpad drivers, PCIe card readers, Fujitsu laptop/tablet platform drivers |
@@ -161,9 +185,27 @@ Kconfig `select` and `depends` chains are always resolved correctly.
 ```text
 buildKernel.sh       Main build orchestrator
 fragments/           Composable Kconfig fragments (merged by merge_config.sh)
+tools/               knobbench + measure.sh (runtime knob comparison)
 linux/               Kernel source tree (cloned separately, not tracked)
 ccache_kernel/       Dedicated ccache directory (generated)
 ```
+
+## Measuring Runtime Knobs
+
+`tools/` holds a small benchmark for the three knobs that are switchable without
+a rebuild — preemption model, cpuidle governor and THP mode — so a config change
+can be decided on numbers instead of reputation. It pins to CCD0 (the 96 MB L3
+chiplet) for reproducibility and needs no external dependencies.
+
+```bash
+make -C tools                  # build as your normal user
+sudo ./tools/measure.sh        # sysfs writes need root; state is restored on exit
+```
+
+`knobbench` can also be run alone for a single sub-benchmark: `pingpong`
+(wakeup latency under load), `idlewake` (timer wakeup from a deep C-state) or
+`tlb` (random access over a 1 GiB working set). See the decisions section for
+what the current settings were chosen on.
 
 ## Linting
 
@@ -184,6 +226,13 @@ redirect (`-sr`), keep column alignment (`-kp`).
 
 ## Kernel Config Gotchas
 
+- Before merging, `buildKernel.sh` checks every fragment symbol against the
+  `Kconfig` tree and warns about names that do not exist in this kernel version.
+  Such entries are silent no-ops: `merge_config.sh -m -Q` does not report them,
+  and the diff check below cannot see them either because no transition ever
+  happens. Symbols get renamed (`USB_ASIX` → `USB_NET_AX8817X`) or removed
+  (`GENERIC_CPU`, `X86_64_V3` dropped in 6.15) on version bumps, so treat every
+  entry in this warning as a broken intent, not as harmless legacy.
 - `merge_config.sh` warns on conflicts (later fragment wins) and on fragment
   values that did not make it into the final `.config` (missing dependencies or
   removed symbols). After a kernel version bump, watch for these warnings and
@@ -201,6 +250,70 @@ redirect (`-sr`), keep column alignment (`-kp`).
   ignores unknown symbol names — always verify the exact symbol in the Kconfig
   tree, not just the driver name.
 
+## Decisions
+
+- **Secure Boot / MOK enrollment:** not used. Stationary desktop, no disk
+  encryption, no threat model that Secure Boot addresses.
+- **Module signing:** `MODULE_SIG_ALL=y`. With `MODULE_SIG=y` but nothing signed,
+  every module load sets `TAINT_UNSIGNED_MODULE`. The key is generated per build
+  and its public half lands in the matching vmlinux, so it does not need to
+  survive the `git clean -dfx` in `reset_kernel_src`. This also keeps
+  `module.sig_enforce=1` available as a cmdline-only hardening step.
+- **3D V-Cache mode:** left at the `frequency` default. `cache` mode parks the
+  non-V-Cache CCD and suits games better, but this machine games less than 10 %
+  of the time. Switching is a runtime concern
+  (`/sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode`), not a kernel
+  config one.
+- **Debug and tracing options:** off, but for build time and image size, not as a
+  matter of principle — anything without a runtime cost is fair game when there
+  is a use for it. Two findings worth keeping: `FUNCTION_TRACER` is the option
+  that costs (an `__fentry__` call per function); `FTRACE=y` with
+  `FUNCTION_TRACER=n` still yields `TRACING`, `TRACEPOINTS`, `EVENT_TRACING`,
+  `BPF_EVENTS` and the `osnoise`/`timerlat` latency tracers at NOP-patched cost.
+  DWARF carries no runtime cost at all — its debug sections are never loaded.
+- **`SCHED_CLASS_EXT` (sched\_ext):** off, because the userspace half is missing.
+  Mint 22.3 packages no `scx` schedulers, and without one the kernel keeps using
+  EEVDF, so enabling it changes nothing on its own. It also pulls in a hard
+  dependency chain — `SCHED_CLASS_EXT` needs `DEBUG_INFO_BTF`, which needs DWARF;
+  `olddefconfig` silently drops both if `DEBUG_INFO_NONE` stays set. Revisit if
+  `scx_lavd` is ever built from source.
+- **Display audio (HDMI/DP): off, and with it the entire HDA stack.** Sound over
+  the monitor is not wanted here; every audio device on this machine is USB. The
+  discrete GPU's HDMI/DP codec was the only HDA codec present, so once display
+  audio goes there is nothing left for HDA to drive. Removing it needs more than
+  `SND_HDA_INTEL=n` — `SND_HDA_ACPI` and, on an AMD box of all things,
+  `SND_SOC_INTEL_AVS` (via `SND_SOC_HDA`) both select the hidden `SND_HDA` core
+  back in. Disabling `SND_SOC` at the root settles it and takes Intel SOF/AVS and
+  AMD ACP with it: sound modules drop from 629 to 105.
+  Consequences, in case sound ever goes missing: nothing can play over
+  DisplayPort or HDMI, and enabling the Raphael iGPU for display output would
+  need `SND_HDA_INTEL` back. All of it sits in `fragments/sound-hdmi.config`,
+  which stays registered in `FRAGMENT_FILES` so the symbols keep being validated
+  on every build — a fragment left out of that array is checked by nothing and
+  rots unnoticed until the day it is needed.
+- **Game controllers:** disabled consistently rather than half-enabled. A
+  controller attached later needs a kernel rebuild.
+- **`PREEMPT_LAZY`:** rejected on measurement. `preempt=lazy` is switchable at
+  runtime regardless of this symbol — `sched_dynamic_mode()` gates it on
+  `ARCH_HAS_PREEMPT_LAZY`, which x86 selects — so it was compared directly
+  against `full`. Wakeup round-trip for a latency-sensitive thread sharing a
+  core with a CPU-bound one: p50 4.9 us on `full` versus 1.00 ms on `lazy`,
+  exactly one tick at `HZ=1000`, which is the designed behaviour — the wakeup
+  waits for the next tick instead of preempting. The test is adversarial by
+  construction, but `lazy` showed no upside anywhere, so `full` stays.
+  Note that on x86 `sched_dynamic_mode()` accepts only `full` and `lazy`;
+  `none` and `voluntary` are compiled out when the arch supports lazy.
+- **`TRANSPARENT_HUGEPAGE_ALWAYS`:** chosen on measurement, 91.4 -> 78.0 ns per
+  random access over a 1 GiB working set (-15%), reproducible across runs, with
+  `AnonHugePages` confirming the mapping went huge only under `always`.
+- **cpuidle governor:** `menu` and `teo` are both compiled in and there is no
+  Kconfig for the default — selection is by `.rating` (menu 20 beats teo 19), so
+  `menu` wins unless `cpuidle.governor=` says otherwise. Measured timer wakeup
+  from a deep C-state: `teo` held a p50 of 86-87 us across runs while `menu`
+  scattered between 88 and 339 us; p90/p99 were comparable. The kernel config is
+  deliberately left alone so the governor stays switchable at runtime.
+
 ## Roadmap
 
-No open items.
+Open items live in [todo.md](todo.md): the remaining kernel hardening gaps, and
+the config changes that become available with the 7.2 branch bump.
