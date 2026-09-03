@@ -1,8 +1,10 @@
-// knobbench – isolates the three runtime knobs on this box:
+// knobbench – isolates the runtime knobs on this box:
 //   pingpong : wakeup/preemption latency under load   -> preempt=full|lazy
 //   idlewake : timer wakeup from deep C-state         -> cpuidle.governor=menu|teo
 //   tlb      : random-access cost over 1 GiB          -> THP=madvise|always
-// No root, no external deps. Pinned to CCD0 (96 MB L3) for reproducibility.
+//   spread   : shared-buffer throughput, multithreaded -> llc_balancing/enabled
+// No root, no external deps. The first three pin to CCD0 (96 MB L3) for
+// reproducibility; spread stays unpinned on purpose, see below.
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,11 +30,18 @@ static inline uint64_t now_ns(void) {
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint64_t)ts.tv_sec * 1000000000ull + ts.tv_nsec;
 }
+static cpu_set_t initial_affinity;
+
 static void pin(int cpu) {
   cpu_set_t s;
   CPU_ZERO(&s);
   CPU_SET(cpu, &s);
   sched_setaffinity(0, sizeof(s), &s);
+}
+// Undo an earlier pin(): threads inherit the creator's mask, so a bench that
+// wants free placement has to clear what the benches before it left behind.
+static void unpin(void) {
+  sched_setaffinity(0, sizeof initial_affinity, &initial_affinity);
 }
 
 // ---------------------------------------------------------------- pingpong
@@ -148,11 +157,112 @@ static void bench_tlb(int cpu, size_t bytes, long steps) {
   munmap(m, bytes);
 }
 
+// ------------------------------------------------------------------ spread
+// Unpinned, unlike the three above, and that is the point: SCHED_CACHE pulls
+// the threads of one process onto a single LLC, so only a workload the
+// balancer is free to place can show what it buys. The threads hammer one
+// shared buffer that fits in either CCD's L3 (32 MB on the small one), so
+// co-location turns cross-CCD coherence traffic into local L3 hits.
+// Thread count stays at or below half an LLC: the kernel skips aggregation
+// once a process has more runnable threads than the LLC has CPUs, and stops
+// aggregating above ~50% LLC utilization.
+// Toggle the mechanism at /sys/kernel/debug/sched/llc_balancing/enabled.
+#define SPREAD_MAX_CPU 512
+#define SPREAD_MAX_LLC 16
+#define SPREAD_CHUNK   1024  // ops between deadline checks and CPU samples
+
+static int llc_of_cpu[SPREAD_MAX_CPU];
+
+struct spread_ctx {
+  uint64_t *buf;
+  size_t slots;  // 64-byte slots in buf
+  uint64_t deadline, seed;
+  long ops;
+  long llc_samples[SPREAD_MAX_LLC];
+};
+
+static void build_llc_map(void) {
+  for (int c = 0; c < SPREAD_MAX_CPU; c++) {
+    char path[96];
+    int id;
+    llc_of_cpu[c] = -1;
+    snprintf(path, sizeof path, "/sys/devices/system/cpu/cpu%d/cache/index3/id", c);
+    FILE *f = fopen(path, "r");
+    if (!f) continue;
+    if (fscanf(f, "%d", &id) == 1 && id >= 0 && id < SPREAD_MAX_LLC) llc_of_cpu[c] = id;
+    fclose(f);
+  }
+}
+
+static void *spread_worker(void *arg) {
+  struct spread_ctx *c = arg;
+  uint64_t r = c->seed;
+  do {
+    for (int i = 0; i < SPREAD_CHUNK; i++) {
+      r ^= r << 13; r ^= r >> 7; r ^= r << 17;
+      c->buf[(r % c->slots) * 8] += r;  // RMW: shared lines bounce between LLCs
+    }
+    c->ops += SPREAD_CHUNK;
+    int cpu = sched_getcpu();
+    if (cpu >= 0 && cpu < SPREAD_MAX_CPU && llc_of_cpu[cpu] >= 0)
+      c->llc_samples[llc_of_cpu[cpu]]++;
+  } while (now_ns() < c->deadline);
+  return NULL;
+}
+
+static void bench_spread(int nthreads, size_t bytes, long ms) {
+  uint64_t *buf = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
+                       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (buf == MAP_FAILED) { perror("mmap"); return; }
+  memset(buf, 0, bytes);
+  build_llc_map();
+  unpin();
+
+  struct spread_ctx *ctx = calloc(nthreads, sizeof *ctx);
+  pthread_t *th = malloc(nthreads * sizeof *th);
+  uint64_t deadline = now_ns() + (uint64_t)ms * 1000000ull;
+  for (int i = 0; i < nthreads; i++) {
+    ctx[i].buf = buf;
+    ctx[i].slots = bytes / 64;
+    ctx[i].deadline = deadline;
+    ctx[i].seed = 88172645463325252ull + (uint64_t)i * 0x9e3779b97f4a7c15ull;
+  }
+  uint64_t t0 = now_ns();
+  for (int i = 0; i < nthreads; i++) pthread_create(&th[i], NULL, spread_worker, &ctx[i]);
+  for (int i = 0; i < nthreads; i++) pthread_join(th[i], NULL);
+  double dt = (now_ns() - t0) / 1e9;
+
+  long ops = 0, per_llc[SPREAD_MAX_LLC] = {0}, samples = 0, top = 0;
+  int top_llc = 0;
+  for (int i = 0; i < nthreads; i++) {
+    ops += ctx[i].ops;
+    for (int l = 0; l < SPREAD_MAX_LLC; l++) per_llc[l] += ctx[i].llc_samples[l];
+  }
+  for (int l = 0; l < SPREAD_MAX_LLC; l++) {
+    samples += per_llc[l];
+    if (per_llc[l] > top) { top = per_llc[l]; top_llc = l; }
+  }
+  printf("spread_rmw      %.2f M ops/s  (%d threads, %zu MiB shared", ops / dt / 1e6,
+         nthreads, bytes >> 20);
+  if (samples) printf(", %.0f%% on llc %d", 100.0 * top / samples, top_llc);
+  printf(")\n");
+
+  free(th);
+  free(ctx);
+  munmap(buf, bytes);
+}
+
 int main(int argc, char **argv) {
   const char *which = argc > 1 ? argv[1] : "all";
   setvbuf(stdout, NULL, _IOLBF, 0);
+  sched_getaffinity(0, sizeof initial_affinity, &initial_affinity);
   if (!strcmp(which, "all") || !strcmp(which, "pingpong")) bench_pingpong(0, 2);
   if (!strcmp(which, "all") || !strcmp(which, "idlewake")) bench_idlewake(4, 3000, 3000);
   if (!strcmp(which, "all") || !strcmp(which, "tlb")) bench_tlb(6, 1ull << 30, 50000000);
+  // spread takes an optional working-set size in MiB: 24 fits either CCD's L3,
+  // 64 fits only the V-Cache one, which is where aggregation should pay off.
+  size_t spread_mib = argc > 2 ? strtoul(argv[2], NULL, 10) : 24;
+  if (!strcmp(which, "all") || !strcmp(which, "spread"))
+    bench_spread(8, spread_mib << 20, 3000);
   return 0;
 }
