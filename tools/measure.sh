@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Compares the three runtime knobs that are switchable without a rebuild:
-#   preempt full|lazy, cpuidle governor menu|teo, THP madvise|always.
+# Compares the runtime knobs that are switchable without a rebuild:
+#   preempt full|lazy, cpuidle governor menu|teo, THP madvise|always,
+#   SCHED_CACHE LLC aggregation off|on.
 # Needs root for the sysfs writes. Restores the original state on exit,
 # including on Ctrl+C. Build knobbench first as your normal user:
 #   make -C tools
@@ -13,23 +14,26 @@ cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 PREEMPT=/sys/kernel/debug/sched/preempt
 GOV=/sys/devices/system/cpu/cpuidle/current_governor
 THP=/sys/kernel/mm/transparent_hugepage/enabled
+LLC=/sys/kernel/debug/sched/llc_balancing/enabled
 
 orig_preempt=$(sed 's/.*(\(\S*\)).*/\1/' $PREEMPT 2> /dev/null)
 orig_gov=$(cat $GOV)
 orig_thp=$(sed 's/.*\[\(\S*\)\].*/\1/' $THP)
+orig_llc=$(cat $LLC 2> /dev/null)
 
 restore() {
   echo
-  echo "--- restoring: preempt=$orig_preempt governor=$orig_gov thp=$orig_thp"
+  echo "--- restoring: preempt=$orig_preempt governor=$orig_gov thp=$orig_thp llc=${orig_llc:-n/a}"
   [[ -n "$orig_preempt" ]] && echo "$orig_preempt" > $PREEMPT 2> /dev/null
   echo "$orig_gov" > $GOV 2> /dev/null
   echo "$orig_thp" > $THP 2> /dev/null
+  [[ -n "$orig_llc" ]] && echo "$orig_llc" > $LLC 2> /dev/null
 }
 trap restore EXIT INT TERM
 
 runs() { for _ in 1 2 3; do ./knobbench "$1"; done; }
 
-echo "=== starting state: preempt=$orig_preempt governor=$orig_gov thp=$orig_thp"
+echo "=== starting state: preempt=$orig_preempt governor=$orig_gov thp=$orig_thp llc=${orig_llc:-n/a}"
 echo
 echo "############ 1. preempt: full vs lazy  (pingpong)"
 for m in full lazy; do
@@ -59,3 +63,14 @@ for t in madvise always; do
   fi
   echo "-- thp=$t"; runs tlb
 done
+
+echo
+echo "############ 4. SCHED_CACHE: off vs on  (spread)"
+if [[ -w $LLC ]]; then
+  for a in 0 1; do
+    echo "$a" > $LLC
+    echo "-- llc_balancing=$a"; runs spread
+  done
+else
+  echo "  $LLC missing - kernel built without SCHED_CACHE"
+fi
