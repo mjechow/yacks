@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.3.0](https://github.com/mjechow/yacks/compare/5.2.0...5.3.0) (2026-09-03)
+
+
+### Features
+
+* **tools:** add the spread benchmark for LLC placement ([1560a29](https://github.com/mjechow/yacks/commit/1560a299112e8dbcac6076df1b694fb617aa7aab))
+
+
+### Bug Fixes
+
+* **cpu:** leave the Promontory 21 sensor off, it cannot bind here ([4796f51](https://github.com/mjechow/yacks/commit/4796f51bca4cfbd1ead807c2b1c1d987f8ef8f98))
+* **fragments:** drop CONFIG_ATALK, removed in 7.2 ([08f2f8a](https://github.com/mjechow/yacks/commit/08f2f8a8d7315b2893e97fba9354c34d7879f0fe))
+
+
+### Performance Improvements
+
+* **base:** keep cache-aware load balancing off ([b62b52d](https://github.com/mjechow/yacks/commit/b62b52d83a5e2bd4b0da8ac09662368ef603f42f))
+
 ## [5.2.0](https://github.com/mjechow/yacks/compare/5.1.1...5.2.0) (2026-08-30)
 
 
