@@ -53,3 +53,12 @@ repos:
     rev: v1.8.1
     hooks:
       - id: betterleaks
+
+  - repo: local
+    hooks:
+      - id: build-knobbench
+        name: build knobbench
+        entry: make -C tools
+        language: system
+        files: ^tools/(knobbench\.c|Makefile)$
+        pass_filenames: false
