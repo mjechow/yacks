@@ -2,7 +2,7 @@
 
 ## Hardening
 
-Baseline (`config-7.1.9-mirko-mars`) already carries the Ubuntu mainline hardening
+Baseline (`old/config-7.1.12-mirko-mars`) already carries the Ubuntu mainline hardening
 set: KASLR (base/memory/kstack-offset), `STACKPROTECTOR_STRONG`, `VMAP_STACK`,
 `FORTIFY_SOURCE`, `HARDENED_USERCOPY` (+default-on), `SLAB_FREELIST_HARDENED`,
 `SLAB_FREELIST_RANDOM`, `SHUFFLE_PAGE_ALLOCATOR`, `INIT_ON_ALLOC_DEFAULT_ON`,
@@ -55,40 +55,29 @@ available — plugins are the only route.
       `git clean -dfx` in the kernel tree (`buildKernel.sh:47`), which deletes
       `scripts/basic/randomize.seed` — same class of bug as the module signing key
 
-## Kernel 7.2 — after the branch bump
+## Kernel 7.2
 
-The tree tracks `linux-rolling-stable`, so 7.2.x arrives on its own once the
-stable releases land. Everything below was verified against the `v7.2` tag, which
-is already present locally — none of it exists in 7.1.12.
+The tree is on `linux-rolling-stable` at 7.2.3, the config changes for 7.2 are
+merged, and every runtime knob was re-measured on it: `preempt=full`, cpuidle
+`menu` and THP `always` all hold, and `SCHED_CACHE` is off on measurement (see
+README decisions). What the measurements turned up instead:
 
-- [ ] `CONFIG_SCHED_CACHE=y` in `base.config`. Cache-aware load balancing pulls
-      threads of one process onto a single LLC domain. Directly relevant here:
-      the 7950X3D has two CCDs with asymmetric L3 — 96 MB on CPUs 0-7,16-23
-      versus 32 MB on 8-15,24-31. `init/Kconfig:1025`, `default y`,
-      `depends on SMP`, and active at runtime by default
-      (`sysctl_sched_cache_user = 1` in `kernel/sched/fair.c:857`). It comes in
-      from the Ubuntu base regardless — pin it explicitly like every other
-      scheduling option in that fragment.
-- [ ] Re-measure with `tools/knobbench` after the bump. `SCHED_CACHE`
-      changes placement, so the `pingpong` and `tlb` baselines from 7.1.9 no
-      longer apply. Tuning knobs sit in debugfs, not sysctl:
-      `/sys/kernel/debug/sched/llc_balancing/{enabled,aggr_tolerance,epoch_period,epoch_affinity_timeout,overaggr_pct,imb_pct}`
-      (`kernel/sched/debug.c:672`, guarded by `#ifdef CONFIG_SCHED_CACHE`, root only).
-- [ ] Resolve the conflict with Tier 2 above: `debugfs=off` removes those knobs.
-      Tune first, harden after — or skip `debugfs=off`.
-- [ ] Re-check `preempt=lazy` and the cpuidle governor after the bump. Both were
-      rejected on 7.1.9 measurements (see README decisions); 7.2 touches the
-      scheduler, so the numbers are not transferable.
-- [ ] `CONFIG_SENSORS_PROM21_XHCI=m` in the HWMON block of
-      `cpu-amd-zen4.config`, next to `NCT6683` and `K10TEMP`. New in 7.2:
-      "AMD Promontory 21 xHCI temperature sensor", `depends on USB_XHCI_PCI`
-      (already `y`). X670E is built from two Promontory 21 dies and both chipset
-      USB controllers are present here — `[1022:43f7]` at `13:00.0` and
-      `15:00.0` — so this adds a chipset temperature the board does not
-      otherwise expose to Linux.
-- [ ] Drop `# CONFIG_ATALK is not set` from `base.config`. It is the only
-      fragment symbol of the 87 removed in 7.2, so the driver is gone and the
-      line becomes a no-op that the symbol check will flag.
+- [ ] Try `amd_x3d_mode=cache` for working sets between 32 and 96 MB. Eight
+      threads sharing a 64 MiB buffer reach 1565 M ops/s pinned to the V-Cache
+      CCD against 703 M ops/s pinned to the other one — 2.2x — and nothing puts
+      them there on its own: the scheduler favours the higher-clocking CCD (CPPC
+      `highest_perf` 226-231 against 176-181) and left every unpinned run on it.
+      The mode is a runtime knob
+      (`/sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode`), so the change
+      belongs in `mars-config`, not here — but the default `frequency` mode
+      demonstrably costs more than half the throughput on cache-resident work.
+- [ ] Tier 2's `debugfs=off` also takes `/sys/kernel/debug/sched/preempt` with
+      it, which `tools/measure.sh` needs for the preemption comparison. Measure
+      first, harden after.
+
+About 80 ns of the 7.2 `pingpong` regression stays unattributed once
+`SCHED_CACHE` is accounted for — 4.85 µs on 7.1.12 against 4.93 µs on 7.2.3 with
+the mechanism off. Not worth a bisect across 21554 commits.
 
 The `optc401_disable_crtc` `REG_WAIT timeout` warning in the boot log is not
 fixed in 7.2 — the only change to `dcn401_optc.c` is an HDMI 2.1 FRL out-mux

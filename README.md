@@ -119,7 +119,8 @@ Additional commands:
   `energy_performance_preference`, so the compiled-in schedutil default only
   applies if the mode is switched to passive/guided.
 - **Preemption:** Full preempt with `PREEMPT_DYNAMIC` + 1000 Hz timer
-- **Scheduler:** `SCHED_AUTOGROUP` (prevents `make -j32` from starving the desktop)
+- **Scheduler:** `SCHED_AUTOGROUP` (prevents `make -j32` from starving the
+  desktop); `SCHED_CACHE` off, see decisions
 - **Memory:** THP with ALWAYS, Multi-Gen LRU, PER_VMA_LOCK
 - **Wine/Proton:** `NTSYNC` built in, so `/dev/ntsync` always exists — as a
   module nothing autoloads it and Wine silently falls back to esync/fsync
@@ -144,7 +145,7 @@ To reduce build time and kernel footprint, the following are disabled:
 | NICs | ~60 unused vendors; enterprise cards (Chelsio, Broadcom bnx2x); ~30 legacy USB network adapters |
 | Storage HBAs | All SCSI HBA drivers (Fibre Channel, SAS, iSCSI); FCoE stack; Arcmsr, SYM53C8XX |
 | Filesystems | XFS, ReiserFS, JFS, NILFS2, EROFS, OCFS2, GFS2, Ceph, OrangeFS, AFS, 9P, Coda, HFS/HFS+, Minix, ROMFS, CRAMFS, UFS |
-| Protocols | IPX, AppleTalk, X.25, DECnet, ATM, TIPC, DCCP, RDS, SCTP, L2TP, WireGuard (VPN handled by Fritz!Box router) |
+| Protocols | IPX, X.25, DECnet, ATM, TIPC, DCCP, RDS, SCTP, L2TP, WireGuard (VPN handled by Fritz!Box router) |
 | Virtualisation | Xen and Hyper-V guest support, staging drivers |
 | Media | TV tuners, DVB, radio, SDR, IR remote controls — UVC webcam kept |
 | Input | Touchscreen, tablet/pen, the whole joystick/gamepad subsystem (`INPUT_JOYSTICK`, joydev, XInput) and the HID gamepad drivers (PlayStation, Steam, Sony, Nintendo, Microsoft, Thrustmaster, Saitek, …) plus Logitech force-feedback; laptop touchpad drivers (ALPS, Elan, Synaptics, Cypress, TrackPoint, FocalTech). `HID_LOGITECH` itself stays enabled — `HID_LOGITECH_DJ` (Logi Bolt receiver) depends on it |
@@ -192,10 +193,10 @@ ccache_kernel/       Dedicated ccache directory (generated)
 
 ## Measuring Runtime Knobs
 
-`tools/` holds a small benchmark for the three knobs that are switchable without
-a rebuild — preemption model, cpuidle governor and THP mode — so a config change
-can be decided on numbers instead of reputation. It pins to CCD0 (the 96 MB L3
-chiplet) for reproducibility and needs no external dependencies.
+`tools/` holds a small benchmark for the knobs that are switchable without a
+rebuild — preemption model, cpuidle governor, THP mode and `SCHED_CACHE` LLC
+aggregation — so a config change can be decided on numbers instead of
+reputation. It needs no external dependencies.
 
 ```bash
 make -C tools                  # build as your normal user
@@ -203,14 +204,46 @@ sudo ./tools/measure.sh        # sysfs writes need root; state is restored on ex
 ```
 
 `knobbench` can also be run alone for a single sub-benchmark: `pingpong`
-(wakeup latency under load), `idlewake` (timer wakeup from a deep C-state) or
-`tlb` (random access over a 1 GiB working set). See the decisions section for
-what the current settings were chosen on.
+(wakeup latency under load), `idlewake` (timer wakeup from a deep C-state),
+`tlb` (random access over a 1 GiB working set) or `spread` (eight threads
+hammering one shared 24 MiB buffer). See the decisions section for what the
+current settings were chosen on.
+
+`pingpong`, `idlewake` and `tlb` pin to CCD0 (the 96 MB L3 chiplet) for
+reproducibility. `spread` deliberately does not: `SCHED_CACHE` aggregates the
+threads of one process onto a single LLC, so it only shows up when the balancer
+is free to place them. The buffer fits in either CCD's L3, which makes
+co-location worth something, and the run reports the share of CPU samples that
+landed on the busiest LLC — so a throughput number always comes with the
+placement that produced it.
+
+### Reference run
+
+Plain `tools/knobbench`, no arguments, on the running defaults — `preempt=full`,
+cpuidle governor `menu`, THP `always`. Kept as the comparison point for the next
+version bump.
+
+| sub-benchmark | unit | p50 | p90 | p99 | p999 | max |
+| --- | --- | --- | --- | --- | --- | --- |
+| `pingpong` | µs | 4.92 | 5.01 | 6.31 | 2439 | 2812 |
+| `idlewake` | µs | 83.3 | 339.7 | 369.7 | 526.9 | 629.9 |
+| `tlb` | ns/access | 77.44 | — | — | — | — |
+| `spread` | M ops/s | 1617 | — | — | — | — |
+
+Kernel `7.2.3-mirko-mars-3`. `pingpong` is the median of five runs, p50 spread
+4.91–4.93 µs, and `spread` the median of five, 1599–1624 M ops/s with 99-100% of
+CPU samples on one LLC every time; `idlewake` and `tlb` are one run each. `tlb`
+ran 50.0 M chase steps with `AnonHugePages` at 1 GiB — the whole working set went
+huge.
+
+`spread` only belongs in a baseline table because `SCHED_CACHE` is off. With it
+compiled in, throughput tracks whichever LLC the aggregation picked that run, and
+a single number means nothing without the placement share beside it.
 
 ## Linting
 
-CI runs [pre-commit](https://pre-commit.com) on push to `main` and on PRs.
-The same hooks run locally before each commit:
+CI runs [pre-commit](https://pre-commit.com) on every pull request against
+`main`. The same hooks run locally before each commit:
 
 ```bash
 # Install pre-commit hooks (one-time setup)
@@ -223,6 +256,10 @@ pre-commit run --all-files
 
 **shfmt style:** 2-space indent (`-i 2`), case indent (`-ci`), space after
 redirect (`-sr`), keep column alignment (`-kp`).
+
+**C code:** no linter, but the `build-knobbench` hook compiles `tools/` with
+`-Wall -Wextra` whenever `knobbench.c` or its `Makefile` changes, locally and in
+CI. A compile catches more in a file this size than `clang-tidy` would.
 
 ## Kernel Config Gotchas
 
@@ -293,27 +330,48 @@ redirect (`-sr`), keep column alignment (`-kp`).
   rots unnoticed until the day it is needed.
 - **Game controllers:** disabled consistently rather than half-enabled. A
   controller attached later needs a kernel rebuild.
+- **Promontory 21 chipset temperature (`SENSORS_PROM21_XHCI`, new in 7.2):** off,
+  because it cannot bind here. The hwmon driver sits on an auxiliary device that
+  `xhci-pci` creates only for `[1022:43fc]` and `[1022:43fd]`; both chipset xHCI
+  functions on this X670E are `[1022:43f7]`. Leaving it off also drops the
+  `USB_XHCI_PCI_PROM21` glue, which is built in by default whenever the sensor is
+  enabled.
 - **`PREEMPT_LAZY`:** rejected on measurement. `preempt=lazy` is switchable at
   runtime regardless of this symbol — `sched_dynamic_mode()` gates it on
   `ARCH_HAS_PREEMPT_LAZY`, which x86 selects — so it was compared directly
   against `full`. Wakeup round-trip for a latency-sensitive thread sharing a
-  core with a CPU-bound one: p50 4.9 us on `full` versus 1.00 ms on `lazy`,
+  core with a CPU-bound one: p50 5.15 us on `full` versus 1.00 ms on `lazy`,
   exactly one tick at `HZ=1000`, which is the designed behaviour — the wakeup
   waits for the next tick instead of preempting. The test is adversarial by
   construction, but `lazy` showed no upside anywhere, so `full` stays.
   Note that on x86 `sched_dynamic_mode()` accepts only `full` and `lazy`;
   `none` and `voluntary` are compiled out when the arch supports lazy.
-- **`TRANSPARENT_HUGEPAGE_ALWAYS`:** chosen on measurement, 91.4 -> 78.0 ns per
+- **`SCHED_CACHE` (new in 7.2):** off, on measurement. It aggregates the threads
+  of one process onto a single LLC, which on paper suits the asymmetric L3 here
+  (96 MB on CPUs 0-7,16-23, 32 MB on 8-15,24-31). In practice it cannot tell the
+  two apart: the working-set figure it compares against LLC capacity,
+  `mm->sc_stat.footprint`, is only ever raised from `task_numa_fault()`, and this
+  is a single-node box with `numa_balancing=0`, so it stays zero. Eight threads
+  sharing a 24 MiB buffer, ten runs a side: with the mechanism off the ordinary
+  balancer put them on the higher-clocking CCD every time, 1621 M ops/s with a
+  0.6% spread; with it on, five of ten runs were dragged onto the V-Cache CCD or
+  split across both, at 956-1406 M ops/s. It also costs ~220 ns per context
+  switch in `account_mm_sched()`, which `pingpong` sees as p50 5.15 us against
+  4.93 us. Switchable at runtime via
+  `/sys/kernel/debug/sched/llc_balancing/enabled` when compiled in — but there is
+  no Kconfig or cmdline for the default, so off in the config is the only way to
+  get it without a boot-time write.
+- **`TRANSPARENT_HUGEPAGE_ALWAYS`:** chosen on measurement, 91.2 -> 77.6 ns per
   random access over a 1 GiB working set (-15%), reproducible across runs, with
   `AnonHugePages` confirming the mapping went huge only under `always`.
 - **cpuidle governor:** `menu` and `teo` are both compiled in and there is no
   Kconfig for the default — selection is by `.rating` (menu 20 beats teo 19), so
   `menu` wins unless `cpuidle.governor=` says otherwise. Measured timer wakeup
-  from a deep C-state: `teo` held a p50 of 86-87 us across runs while `menu`
-  scattered between 88 and 339 us; p90/p99 were comparable. The kernel config is
+  from a deep C-state: `teo` held a p50 of 86-96 us across runs while `menu`
+  scattered between 86 and 341 us; p90/p99 were comparable. The kernel config is
   deliberately left alone so the governor stays switchable at runtime.
 
 ## Roadmap
 
 Open items live in [todo.md](todo.md): the remaining kernel hardening gaps, and
-the config changes that become available with the 7.2 branch bump.
+the measurements to redo now that the tree is on 7.2.
