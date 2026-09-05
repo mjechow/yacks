@@ -163,9 +163,12 @@ static void bench_tlb(int cpu, size_t bytes, long steps) {
 // balancer is free to place can show what it buys. The threads hammer one
 // shared buffer that fits in either CCD's L3 (32 MB on the small one), so
 // co-location turns cross-CCD coherence traffic into local L3 hits.
-// Thread count stays at or below half an LLC: the kernel skips aggregation
-// once a process has more runnable threads than the LLC has CPUs, and stops
-// aggregating above ~50% LLC utilization.
+// Thread count matters more than it looks. invalid_llc_nr() drops aggregation
+// once nr_running_avg * SMT stops fitting the LLC width under fits_capacity()'s
+// 25% margin — on a 16-CPU LLC that is 6.4 runnable threads, not 16. At 8 the
+// EWMA starts at 0, so aggregation engages for the first epochs and is then
+// invalidated, which shoves threads around and abandons them. Test at 4-6 to
+// see the mechanism working, at 8+ to see it let go.
 // Toggle the mechanism at /sys/kernel/debug/sched/llc_balancing/enabled.
 #define SPREAD_MAX_CPU 512
 #define SPREAD_MAX_LLC 16
@@ -259,10 +262,12 @@ int main(int argc, char **argv) {
   if (!strcmp(which, "all") || !strcmp(which, "pingpong")) bench_pingpong(0, 2);
   if (!strcmp(which, "all") || !strcmp(which, "idlewake")) bench_idlewake(4, 3000, 3000);
   if (!strcmp(which, "all") || !strcmp(which, "tlb")) bench_tlb(6, 1ull << 30, 50000000);
-  // spread takes an optional working-set size in MiB: 24 fits either CCD's L3,
-  // 64 fits only the V-Cache one, which is where aggregation should pay off.
+  // spread takes an optional working-set size in MiB and thread count: 24 MiB
+  // fits either CCD's L3, 64 fits only the V-Cache one; 6 threads or fewer keep
+  // SCHED_CACHE aggregation valid on a 16-CPU LLC, 8 sit past its threshold.
   size_t spread_mib = argc > 2 ? strtoul(argv[2], NULL, 10) : 24;
+  int spread_threads = argc > 3 ? atoi(argv[3]) : 8;
   if (!strcmp(which, "all") || !strcmp(which, "spread"))
-    bench_spread(8, spread_mib << 20, 3000);
+    bench_spread(spread_threads, spread_mib << 20, 3000);
   return 0;
 }

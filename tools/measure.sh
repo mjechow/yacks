@@ -66,10 +66,25 @@ done
 
 echo
 echo "############ 4. SCHED_CACHE: off vs on  (spread)"
+# Two patterns, because they answer different questions. Alternated runs compare
+# the mechanism itself with state settled between them. A block of consecutive
+# enabled runs reproduces what back-to-back multithreaded processes actually get:
+# placement fragmented across both CCDs in roughly half of them, which never
+# happens with the mechanism off. Watch the LLC share, not just the throughput.
 if [[ -w $LLC ]]; then
-  for a in 0 1; do
-    echo "$a" > $LLC
-    echo "-- llc_balancing=$a"; runs spread
+  echo "-- alternating"
+  for _ in 1 2 3; do
+    for a in 0 1; do
+      echo "$a" > $LLC
+      printf -- "   llc_balancing=%s  " "$a"
+      ./knobbench spread
+    done
+  done
+  echo "-- block of enabled runs, back to back"
+  echo 1 > $LLC
+  for _ in 1 2 3 4 5; do
+    printf -- "   llc_balancing=1  "
+    ./knobbench spread
   done
 else
   echo "  $LLC missing - kernel built without SCHED_CACHE"
