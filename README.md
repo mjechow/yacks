@@ -190,6 +190,13 @@ message, when a patch is already present in the tree — that is what a patch
 landing upstream looks like, and the fix is to delete the file. Patches are meant
 to be temporary; each one carries its `Link:` to the posting it came from.
 
+Nothing may reformat these files: `patches/` is excluded from the
+`trailing-whitespace` and `end-of-file-fixer` hooks, and an editor that trims on
+save needs the same exemption. In a unified diff the whitespace is data — a blank
+context line is a lone space, and the two hooks together turn the final one into
+nothing and then delete it, after which `git apply` reports a corrupt patch. The
+bytes are the artifact.
+
 Currently carried:
 
 <!-- pyml disable line-length -->
