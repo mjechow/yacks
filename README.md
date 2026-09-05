@@ -103,8 +103,8 @@ Additional commands:
 ```bash
 ./buildKernel.sh -h            # show help (--help)
 ./buildKernel.sh -l            # list all installed kernels, marks the running one (--list)
-./buildKernel.sh -c            # clean build artifacts, archive debs to old/ (--clean)
-./buildKernel.sh -p            # remove old installed kernels, keeps newest 2 + distro (--purge-old)
+./buildKernel.sh -c            # clean build artifacts, archive debs to old/, keeps newest 3 (--clean)
+./buildKernel.sh -p            # remove old installed kernels, keeps newest 3 + distro (--purge-old)
 ./buildKernel.sh -t            # build and install cpupower, one-time, requires sudo (--tools)
 ```
 
