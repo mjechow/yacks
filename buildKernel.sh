@@ -15,6 +15,7 @@ VERBOSITY=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 FRAGMENTS_DIR="${SCRIPT_DIR}/fragments"
+PATCHES_DIR="${SCRIPT_DIR}/patches"
 KERNEL_SRC_DIR="linux"
 BUILD_LOG_FILE="kernelBuild.log"
 LOCALVERSION="$(whoami)-$(hostname -s)${REV:+-$REV}"
@@ -44,7 +45,28 @@ die() {
 }
 reset_kernel_src() {
   git -C "$SCRIPT_DIR/$KERNEL_SRC_DIR" reset --hard > /dev/null
-  git -C "$SCRIPT_DIR/$KERNEL_SRC_DIR" clean -dfx   > /dev/null  # NOTE: change if patches once introduced
+  git -C "$SCRIPT_DIR/$KERNEL_SRC_DIR" clean -dfx   > /dev/null
+}
+# Patches live in patches/, outside the kernel tree, so the reset above cannot
+# touch them; they are re-applied after every reset. git apply leaves no commits,
+# which keeps the upstream-freshness check comparing like with like.
+apply_patches() {
+  local p name
+  compgen -G "$PATCHES_DIR/*.patch" > /dev/null || return 0
+  local patches=("$PATCHES_DIR"/*.patch)
+
+  info "Applying ${#patches[@]} patch(es) from patches/..."
+  for p in "${patches[@]}"; do # cwd is the kernel tree by now, as for the make calls below
+    name=${p##*/}
+    if git apply --check "$p" 2> /dev/null; then
+      git apply "$p" || die "Failed to apply $name"
+      success "  $name"
+    elif git apply --reverse --check "$p" 2> /dev/null; then
+      die "$name is already in the kernel tree — it landed upstream, delete it"
+    else
+      git apply --check "$p" || die "$name does not apply to this kernel version"
+    fi
+  done
 }
 usage() {
   printf "Yet Another Compile Kernel Script — a custom Linux kernel build system for\n"
@@ -154,6 +176,7 @@ unset _upstream_hash
 # --- Clean & reset git -------------------------------------------------------
 info "Cleanup and checkout..."
 reset_kernel_src
+apply_patches
 
 # --- Determine kernel version from Makefile -----------------------------------
 KERNEL_VERSION_DIR=v$(awk '/^VERSION =/{v=$3} /^PATCHLEVEL =/{p=$3} /^SUBLEVEL =/{s=$3} END{print v"."p"."s}' Makefile)

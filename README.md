@@ -177,6 +177,29 @@ related options so only the relevant files need to change when hardware changes.
 | `hardware-desktop.config` | USB, HID, SD card readers, UVC webcam, watchdog off, no-AMD crypto accelerators; disables laptop touchpad drivers, PCIe card readers, Fujitsu laptop/tablet platform drivers |
 <!-- pyml enable line-length -->
 
+## Patches
+
+Anything in `patches/*.patch` is applied to the kernel tree with `git apply`
+after `buildKernel.sh` resets it, in filename order. The directory sits outside
+`linux/`, so the `git reset --hard` and `git clean -dfx` that start every build
+cannot remove it, and because `git apply` creates no commits the upstream
+freshness check keeps comparing like with like.
+
+The build stops if a patch does not apply. It also stops, with a different
+message, when a patch is already present in the tree — that is what a patch
+landing upstream looks like, and the fix is to delete the file. Patches are meant
+to be temporary; each one carries its `Link:` to the posting it came from.
+
+Currently carried:
+
+<!-- pyml disable line-length -->
+| Patch | Why |
+| --- | --- |
+| `0001-xhci-pci-add-amd-600-series-to-xhci-pci-prom21.patch` | Adds the 600-series chipset xHCI IDs (`43f7`, `43f9`, `43fa`) to the PROM21 glue, without which `SENSORS_PROM21_XHCI` never binds on this board. Posted to linux-usb 2026-08-20, not merged yet; verified here — both chipset dies report a plausible temperature and USB is unaffected |
+<!-- pyml enable line-length -->
+
+## Config Fragment Order
+
 Fragments are applied in the order listed; later fragments take precedence on
 conflicts. `merge_config.sh` runs `make olddefconfig` after the merge, so
 Kconfig `select` and `depends` chains are always resolved correctly.
@@ -186,6 +209,7 @@ Kconfig `select` and `depends` chains are always resolved correctly.
 ```text
 buildKernel.sh       Main build orchestrator
 fragments/           Composable Kconfig fragments (merged by merge_config.sh)
+patches/             Kernel patches, re-applied after every tree reset
 tools/               knobbench + measure.sh (runtime knob comparison)
 linux/               Kernel source tree (cloned separately, not tracked)
 ccache_kernel/       Dedicated ccache directory (generated)

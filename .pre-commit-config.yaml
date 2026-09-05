@@ -6,7 +6,9 @@ repos:
       - id: no-commit-to-branch
         args: ["--branch", "main"]
       - id: trailing-whitespace
+        exclude: ^patches/ # diffs carry significant whitespace
       - id: end-of-file-fixer
+        exclude: ^patches/
       - id: check-json
         exclude: ^\.vscode/
       - id: check-yaml
