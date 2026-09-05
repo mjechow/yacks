@@ -59,8 +59,9 @@ available — plugins are the only route.
 
 The tree is on `linux-rolling-stable` at 7.2.3, the config changes for 7.2 are
 merged, and every runtime knob was re-measured on it: `preempt=full`, cpuidle
-`menu` and THP `always` all hold, and `SCHED_CACHE` is off on measurement (see
-README decisions). What the measurements turned up instead:
+`menu` and THP `always` all hold, and `SCHED_CACHE` is off — no measurable gain
+at 4, 6 or 8 threads against a ~220 ns per-switch cost (see README decisions).
+What the measurements turned up along the way:
 
 - [ ] Try `amd_x3d_mode=cache` for working sets between 32 and 96 MB. Eight
       threads sharing a 64 MiB buffer reach 1565 M ops/s pinned to the V-Cache
@@ -71,6 +72,43 @@ README decisions). What the measurements turned up instead:
       (`/sys/bus/platform/drivers/amd_x3d_vcache/*/amd_x3d_mode`), so the change
       belongs in `mars-config`, not here — but the default `frequency` mode
       demonstrably costs more than half the throughput on cache-resident work.
+- [ ] Send a `Tested-by` for the PROM21 600-series patch, and consider respinning
+      it as v3. Confirmed working on this X670E with 7.2.3-mirko-mars-4: both
+      `[1022:43f7]` functions bind `xhci-pci-prom21`, both auxiliary devices
+      appear, `sensors` reports 57.4 °C and 62.8 °C against 58 °C Tctl, and USB
+      is unaffected. That is a second board after the submitter's X670. The only
+      review comment on the thread asks for the new IDs to be added to the
+      `PCI IDs:` line in `Documentation/hwmon/prom21-xhci.rst`, so a v3 is owed
+      and nobody has sent one — worth doing, since the patch is carried locally
+      until it lands. Thread:
+      <https://patchwork.kernel.org/project/linux-usb/patch/20260820-xhci-pci-prom21-v2-1-638e5958fbbf@stevetech.au/>
+- [ ] Find out where the `SCHED_CACHE` misplacement decision is made, then
+      decide whether it is worth reporting. Reproducer: ten consecutive
+      `tools/knobbench spread 24 8` runs with `llc_balancing/enabled=1` place
+      threads across both CCDs in 5, 5 and 7 of 10 across three blocks, against
+      0 of 20 with it disabled and 0 of 10 when alternated with disabled runs.
+      Needs a kernel with the symbol compiled in — `7.2.3-mirko-mars-2` while it
+      lasts, otherwise a build for the purpose. Machine is a 7950X3D, two LLCs,
+      single NUMA node, `numa_balancing=0`, and the per-LLC counters look
+      correctly paired, so the cause is open.
+      Three steps need no rebuild. `kernel.sched_schedstats=1` (compiled in, off
+      at runtime), then diff `/proc/schedstat` around a block: domain lines carry
+      45 counters in three groups of 11, field 8 of each group being the
+      `detach_task` count, so `domain2 PKG` detaches during enabled blocks and
+      none during disabled ones would put the cross-CCD moves on the periodic
+      balancer via `migrate_llc_task`, with `alb_pushed` separating active
+      balance. A placement timeline in `spread` — workers publishing their CPU
+      each chunk, a monitor sampling every 10 ms — says when: a split appearing
+      within the first tens of milliseconds and never healing implicates
+      `task_cache_work()`, given the 10 ms epoch and 50 ms affinity timeout,
+      while one that oscillates does not. And the knobs bisect the stages:
+      `aggr_tolerance` gates `invalid_llc_nr()`, `epoch_period` how often the
+      preference is recomputed, `epoch_affinity_timeout` when a stale one is
+      dropped, `imb_pct` and `overaggr_pct` the balancer's willingness to act.
+      For an upstream report the evidence wants to be kernel-side: a build with
+      `FTRACE=y` and `FUNCTION_TRACER=n` (tracepoints at NOP cost, see README
+      decisions) plus `SCHED_DEBUG`, recording `sched_migrate_task` and
+      `sched_wakeup_new`. Keep that under its own `REV`, not as the daily kernel.
 - [ ] Tier 2's `debugfs=off` also takes `/sys/kernel/debug/sched/preempt` with
       it, which `tools/measure.sh` needs for the preemption comparison. Measure
       first, harden after.
@@ -82,6 +120,16 @@ the mechanism off. Not worth a bisect across 21554 commits.
 The `optc401_disable_crtc` `REG_WAIT timeout` warning in the boot log is not
 fixed in 7.2 — the only change to `dcn401_optc.c` is an HDMI 2.1 FRL out-mux
 mapping, and both monitors here are DisplayPort. Cosmetic, no action.
+
+## Build script
+
+- [ ] Simplify the Ubuntu `.deb` lookup in `buildKernel.sh`, around the
+      `DEB_FILE=` assignment. The `|| warn` there can never fire: the assignment
+      takes the pipeline's exit status, which is `head`'s, and `head` exits 0 even
+      when `grep` matched nothing. The block after it then warns a second time and
+      assigns `""` to a variable that is already empty. Seven lines collapse to
+      the assignment plus `[[ -n "$DEB_FILE" ]] || warn ...`, which also makes the
+      download-failure path testable by pointing `UBUNTU_BASE_URL` at a 404.
 
 ## Out of scope for this repo
 
