@@ -229,8 +229,8 @@ sudo ./tools/measure.sh        # sysfs writes need root; state is restored on ex
 
 `knobbench` can also be run alone for a single sub-benchmark: `pingpong`
 (wakeup latency under load), `idlewake` (timer wakeup from a deep C-state),
-`tlb` (random access over a 1 GiB working set) or `spread` (eight threads
-hammering one shared 24 MiB buffer). See the decisions section for what the
+`tlb` (random access over a 1 GiB working set) or `spread` (threads hammering one
+shared buffer, `spread [MiB] [threads]`, default 24 and 8). See the decisions section for what the
 current settings were chosen on.
 
 `pingpong`, `idlewake` and `tlb` pin to CCD0 (the 96 MB L3 chiplet) for
@@ -240,6 +240,11 @@ is free to place them. The buffer fits in either CCD's L3, which makes
 co-location worth something, and the run reports the share of CPU samples that
 landed on the busiest LLC — so a throughput number always comes with the
 placement that produced it.
+
+Both arguments matter for what the run can show. A 64 MiB set no longer fits the
+32 MB CCD, which is where the V-Cache one wins by 2.2x; and above 6.4 runnable
+threads per 16-CPU LLC the kernel stops aggregating at all, so the default 8 sees
+the mechanism engage and then let go, while 4 to 6 keep it valid throughout.
 
 ### Reference run
 
