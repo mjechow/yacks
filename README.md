@@ -380,21 +380,38 @@ CI. A compile catches more in a file this size than `clang-tidy` would.
   construction, but `lazy` showed no upside anywhere, so `full` stays.
   Note that on x86 `sched_dynamic_mode()` accepts only `full` and `lazy`;
   `none` and `voluntary` are compiled out when the arch supports lazy.
-- **`SCHED_CACHE` (new in 7.2):** off, on measurement. It aggregates the threads
-  of one process onto a single LLC, which on paper suits the asymmetric L3 here
-  (96 MB on CPUs 0-7,16-23, 32 MB on 8-15,24-31). In practice it cannot tell the
-  two apart: the working-set figure it compares against LLC capacity,
-  `mm->sc_stat.footprint`, is only ever raised from `task_numa_fault()`, and this
-  is a single-node box with `numa_balancing=0`, so it stays zero. Eight threads
-  sharing a 24 MiB buffer, ten runs a side: with the mechanism off the ordinary
-  balancer put them on the higher-clocking CCD every time, 1621 M ops/s with a
-  0.6% spread; with it on, five of ten runs were dragged onto the V-Cache CCD or
-  split across both, at 956-1406 M ops/s. It also costs ~220 ns per context
-  switch in `account_mm_sched()`, which `pingpong` sees as p50 5.15 us against
-  4.93 us. Switchable at runtime via
-  `/sys/kernel/debug/sched/llc_balancing/enabled` when compiled in — but there is
-  no Kconfig or cmdline for the default, so off in the config is the only way to
-  get it without a boot-time write.
+- **`SCHED_CACHE` (new in 7.2):** off. It aggregates the threads of one process
+  onto a single LLC, which on paper suits the asymmetric L3 here (96 MB on CPUs
+  0-7,16-23, 32 MB on 8-15,24-31). On this machine there is nothing for it to do:
+  the ordinary balancer already put all threads on one CCD in every single run at
+  4, 6 and 8 threads, and where placement matches, throughput matches to within
+  0.2% — medians 829.1 against 829.0 M ops/s at 4 threads, 1228.7 against 1227.6
+  at 6, 1621.9 against 1624.2 at 8, ten interleaved pairs each on a shared 24 MiB
+  buffer.
+  What it does add is ~220 ns per context switch in `account_mm_sched()`, called
+  from `update_curr()` whatever the affinity — `pingpong` p50 5.15 us against
+  4.92 us with the symbol compiled out — and placements the balancer would not
+  have made: threads straddling both CCDs, at 33% to 42% below a co-located run.
+  Back-to-back aggregating processes are where it goes wrong, and that
+  reproduces. Ten consecutive runs with it enabled fragmented 5 of 10, then 5 of
+  10 again in a later session, then 7 of 10 in a second block started
+  immediately after the first with no toggle in between. With it disabled: 0 of
+  20. The same ten enabled runs alternated one-for-one with disabled runs: 0 of
+  10. So the trigger is not the toggle but the absence of a gap — a disabled run
+  buys three seconds in which no aggregation decision is taken, and that is
+  enough to clear it. Why a preceding aggregating process biases the next one is
+  unexplained; the per-LLC counters are decremented on dequeue with an underflow
+  guard, so there is no obvious leak to point at. It matters because starting
+  multithreaded processes back to back is ordinary desktop behaviour, not a
+  contrived case.
+  Cache size never enters the decision anyway: `task_cache_work()` picks the LLC
+  with the highest accumulated occupancy, and the one capacity test,
+  `exceed_llc_capacity()`, reads `mm->sc_stat.footprint`, which is only raised
+  from `task_numa_fault()` and stays zero on this single-node box with
+  `numa_balancing=0`.
+  Switchable at runtime via `/sys/kernel/debug/sched/llc_balancing/enabled` when
+  compiled in, but there is no Kconfig or cmdline for the default, so off in the
+  config is the only way to get it without a boot-time write.
 - **`TRANSPARENT_HUGEPAGE_ALWAYS`:** chosen on measurement, 91.2 -> 77.6 ns per
   random access over a 1 GiB working set (-15%), reproducible across runs, with
   `AnonHugePages` confirming the mapping went huge only under `always`.
