@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.4.0](https://github.com/mjechow/yacks/compare/5.3.0...5.4.0) (2026-09-05)
+
+
+### Features
+
+* **build:** apply patches from patches/ after the tree reset ([da9e542](https://github.com/mjechow/yacks/commit/da9e5425ad2416d640a1da7208c300a79cd6ac96))
+* **cpu:** enable the Promontory 21 chipset temperature ([2a30da4](https://github.com/mjechow/yacks/commit/2a30da42ddf653843549597b19e33d19bb88fc45))
+* **tools:** take a thread count for spread, measure it both ways ([127997c](https://github.com/mjechow/yacks/commit/127997c0028917ad3da5b30364674e25e37bf798))
+
 ## [5.3.0](https://github.com/mjechow/yacks/compare/5.2.0...5.3.0) (2026-09-03)
 
 
