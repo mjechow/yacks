@@ -354,12 +354,17 @@ CI. A compile catches more in a file this size than `clang-tidy` would.
   rots unnoticed until the day it is needed.
 - **Game controllers:** disabled consistently rather than half-enabled. A
   controller attached later needs a kernel rebuild.
-- **Promontory 21 chipset temperature (`SENSORS_PROM21_XHCI`, new in 7.2):** off,
-  because it cannot bind here. The hwmon driver sits on an auxiliary device that
-  `xhci-pci` creates only for `[1022:43fc]` and `[1022:43fd]`; both chipset xHCI
-  functions on this X670E are `[1022:43f7]`. Leaving it off also drops the
-  `USB_XHCI_PCI_PROM21` glue, which is built in by default whenever the sensor is
-  enabled.
+- **Promontory 21 chipset temperature (`SENSORS_PROM21_XHCI`, new in 7.2):** on,
+  and it works — but only together with the patch in `patches/`. PROM21 is the IP
+  behind both the 6xx and 8xx chipsets, yet the `xhci-pci-prom21` glue claims only
+  the 800-series `[1022:43fc]`/`[1022:43fd]`, and both chipset xHCI functions on
+  this X670E are the 600-series `[1022:43f7]`. Without the patch no auxiliary
+  device is created, the controllers run on plain `xhci_hcd`, and the module is
+  dead weight. With it, both functions bind and `sensors` gains
+  `prom21_xhci-pci-1300` and `prom21_xhci-pci-1500` — one per die, 57.4 °C and
+  62.8 °C at idle against 58 °C Tctl, so the conversion derived on 800-series
+  silicon holds here. USB is unaffected: the devices behind both controllers
+  enumerate normally and the boot log carries no new xHCI complaints.
 - **`PREEMPT_LAZY`:** rejected on measurement. `preempt=lazy` is switchable at
   runtime regardless of this symbol — `sched_dynamic_mode()` gates it on
   `ARCH_HAS_PREEMPT_LAZY`, which x86 selects — so it was compared directly
