@@ -51,20 +51,19 @@ reset_kernel_src() {
 # touch them; they are re-applied after every reset. git apply leaves no commits,
 # which keeps the upstream-freshness check comparing like with like.
 apply_patches() {
-  local p name
+  local p name err
   compgen -G "$PATCHES_DIR/*.patch" > /dev/null || return 0
   local patches=("$PATCHES_DIR"/*.patch)
 
   info "Applying ${#patches[@]} patch(es) from patches/..."
   for p in "${patches[@]}"; do # cwd is the kernel tree by now, as for the make calls below
     name=${p##*/}
-    if git apply --check "$p" 2> /dev/null; then
-      git apply "$p" || die "Failed to apply $name"
+    if err=$(git apply "$p" 2>&1); then # atomic: nothing is applied unless all of it applies
       success "  $name"
     elif git apply --reverse --check "$p" 2> /dev/null; then
       die "$name is already in the kernel tree — it landed upstream, delete it"
     else
-      git apply --check "$p" || die "$name does not apply to this kernel version"
+      die "$name does not apply to this kernel version: $err"
     fi
   done
 }
