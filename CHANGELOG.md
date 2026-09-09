@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.0](https://github.com/mjechow/yacks/compare/5.4.0...5.5.0) (2026-09-09)
+
+
+### Features
+
+* **build:** keep three archived builds in clean mode ([f065372](https://github.com/mjechow/yacks/commit/f065372404f229ba437dad81fec4032ae19f4f5e))
+
 ## [5.4.0](https://github.com/mjechow/yacks/compare/5.3.0...5.4.0) (2026-09-05)
 
 
