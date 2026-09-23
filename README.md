@@ -104,7 +104,7 @@ Additional commands:
 ./buildKernel.sh -h            # show help (--help)
 ./buildKernel.sh -l            # list all installed kernels, marks the running one (--list)
 ./buildKernel.sh -c            # clean build artifacts, archive debs to old/, keeps newest 3 (--clean)
-./buildKernel.sh -p            # remove old installed kernels, keeps newest 3 + distro (--purge-old)
+./buildKernel.sh -p            # remove old installed kernels, keeps newest 2 + distro (--purge-old)
 ./buildKernel.sh -t            # build and install cpupower, one-time, requires sudo (--tools)
 ```
 
@@ -175,6 +175,7 @@ related options so only the relevant files need to change when hardware changes.
 | `network-realtek.config` | RTL8125 2.5GbE, Bluetooth; disables WiFi, all other NIC vendors, Fujitsu Extended Socket, legacy USB network adapters; BBR/FQ/Cake |
 | `storage.config` | NVMe, SATA, SCSI, filesystems; disables PATA, unused SATA controllers, exotic FS, enterprise HBA/FCoE |
 | `hardware-desktop.config` | USB, HID, SD card readers, UVC webcam, watchdog off, no-AMD crypto accelerators; disables laptop touchpad drivers, PCIe card readers, Fujitsu laptop/tablet platform drivers |
+| `hardening.config` | Hardening beyond the Ubuntu baseline: `BUG_ON_DATA_CORRUPTION`, `IO_STRICT_DEVMEM`, no slab merging, no vsyscall page |
 <!-- pyml enable line-length -->
 
 ## Patches
@@ -187,8 +188,13 @@ freshness check keeps comparing like with like.
 
 The build stops if a patch does not apply. It also stops, with a different
 message, when a patch is already present in the tree — that is what a patch
-landing upstream looks like, and the fix is to delete the file. Patches are meant
-to be temporary; each one carries its `Link:` to the posting it came from.
+landing upstream looks like, and the fix is to delete the file. If `linux/`
+carries commits its upstream branch lacks, the patch may sit in one of those
+instead, and the build stops telling you to keep the file. A patch that landed
+in edited form no longer applies in either direction; when a commit newer than
+the patch's `Date:` carries its `Subject:`, the build names that commit. Patches
+are meant to be temporary; each one is kept in mail format (`Subject:`, `Date:`)
+and carries its `Link:` to the posting it came from.
 
 Nothing may reformat these files: `patches/` is excluded from the
 `trailing-whitespace` and `end-of-file-fixer` hooks, and an editor that trims on
@@ -313,9 +319,12 @@ CI. A compile catches more in a file this size than `clang-tidy` would.
 - Options set in a fragment that are overridden by a Kconfig `select` in a
   later `olddefconfig` pass will appear in the diff as reverted — this is
   expected; move conflicting options to the fragment that enables their parent.
-- Before each build, `buildKernel.sh` scans the generated `.diff` for any
-  transition involving `n` (`n -> y`, `n -> m`, `y -> n`, `m -> n`) and warns
-  if any are found. These indicate a fragment value was overridden by
+- The generated `.diff` compares `config-<ver>-<localversion>.pre` (Ubuntu base
+  plus fragments, before `olddefconfig`) with the final
+  `config-<ver>-<localversion>`; both stay next to the script. Before each
+  build, `buildKernel.sh` scans the `.diff` for any transition involving `n`
+  (`n -> y`, `n -> m`, `y -> n`, `m -> n`) and warns if any are found. These
+  indicate a fragment value was overridden by
   `olddefconfig`, typically because a `select` dependency pulled something back
   in. To fix: find the selecting parent with
   `grep -rn "select CONFIG_FOO" linux/ --include="Kconfig"`, then disable
@@ -332,6 +341,20 @@ CI. A compile catches more in a file this size than `clang-tidy` would.
   and its public half lands in the matching vmlinux, so it does not need to
   survive the `git clean -dfx` in `reset_kernel_src`. This also keeps
   `module.sig_enforce=1` available as a cmdline-only hardening step.
+- **GCC plugins (`KSTACK_ERASE`, `RANDSTRUCT`, `LATENT_ENTROPY`):** off —
+  `base.config` keeps `GCC_PLUGINS` unset. GCC 15 rejects both native
+  alternatives (`-frandomize-layout-seed-file`, `-fsanitize-coverage=stack-depth`),
+  so plugins via `gcc-15-plugin-dev` would be the only route, and none of them
+  pays for itself here:
+  - `KSTACK_ERASE` largely duplicates `INIT_STACK_ALL_ZERO=y`, which already
+    zeroes uninitialized stack variables. What remains is a shorter lifetime for
+    stale stack data, at ~1% on a kernel compile and more on syscall-heavy work.
+  - `RANDSTRUCT` relies on a secret seed, but the headers package copies all of
+    `scripts/`, so `scripts/basic/randstruct.seed` lands readable by every local
+    user under `/usr/src/linux-headers-<ver>/`. On top of that the GCC plugin pads
+    every bitfield, forces `MODVERSIONS` and breaks forensics tools such as
+    Volatility.
+  - `LATENT_ENTROPY` targets entropy-starved embedded systems.
 - **3D V-Cache mode:** left at the `frequency` default. `cache` mode parks the
   non-V-Cache CCD and suits games better, but this machine games less than 10 %
   of the time. Switching is a runtime concern
@@ -431,5 +454,6 @@ CI. A compile catches more in a file this size than `clang-tidy` would.
 
 ## Roadmap
 
-Open items live in [todo.md](todo.md): the remaining kernel hardening gaps, and
-the measurements to redo now that the tree is on 7.2.
+Open items live in [todo.md](todo.md): upstreaming the PROM21 patch and the
+`SCHED_CACHE` misplacement investigation. It also lists the hardening options
+decided against.
