@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.0](https://github.com/mjechow/yacks/compare/5.5.0...5.6.0) (2026-09-23)
+
+
+### Features
+
+* **build:** add hardening fragment and fix build script edge cases ([39876de](https://github.com/mjechow/yacks/commit/39876dec463b6173a1b3187f67aa785f924d30bb))
+
 ## [5.5.0](https://github.com/mjechow/yacks/compare/5.4.0...5.5.0) (2026-09-09)
 
 
