@@ -10,9 +10,9 @@ set -euo pipefail
 # use a date (e.g. 20250524) or incrementing number so dpkg sorts newer builds higher than older ones
 REV= # $(date +%Y%m%d)
 DEBUG=0
-VERBOSITY=0
+VERBOSITY=$DEBUG
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
 FRAGMENTS_DIR="${SCRIPT_DIR}/fragments"
 PATCHES_DIR="${SCRIPT_DIR}/patches"
@@ -22,7 +22,7 @@ LOCALVERSION="$(whoami)-$(hostname -s)${REV:+-$REV}"
 
 ARCH="$(uname -m)"
 export ARCH
-export CCACHE_DIR="${SCRIPT_DIR}/ccache_kernel" # separater Cache vom normalen ccache
+export CCACHE_DIR="${SCRIPT_DIR}/ccache_kernel" # separate from the regular ccache
 export CCACHE_MAXSIZE="10G"
 KBUILD_BUILD_TIMESTAMP="$(git -C "${SCRIPT_DIR}/${KERNEL_SRC_DIR}" log -1 --format='%cd' --date=format:'%a %b %d %T %Z %Y')"
 export KBUILD_BUILD_TIMESTAMP
@@ -35,7 +35,6 @@ info() { printf "[*] %s\n" "$@"; }
 warn() { printf "[!] %s\n" "$@"; }
 debug() {
   [[ $DEBUG -eq 0 ]] && return 0
-  VERBOSITY=1
   printf "[D] %s\n" "$@"
 }
 success() { printf "[+] %s\n" "$@"; }
@@ -48,12 +47,11 @@ reset_kernel_src() {
   git -C "$SCRIPT_DIR/$KERNEL_SRC_DIR" clean -dfx   > /dev/null
 }
 # Patches live in patches/, outside the kernel tree, so the reset above cannot
-# touch them; they are re-applied after every reset. git apply leaves no commits,
+# touch them; they are re-applied before every build. git apply leaves no commits,
 # which keeps the upstream-freshness check comparing like with like.
 apply_patches() {
-  local p name err
-  compgen -G "$PATCHES_DIR/*.patch" > /dev/null || return 0
-  local patches=("$PATCHES_DIR"/*.patch)
+  local p name err subject date hash patches=("$PATCHES_DIR"/*.patch)
+  [[ -e ${patches[0]} ]] || return 0 # unmatched glob stays literal
 
   info "Applying ${#patches[@]} patch(es) from patches/..."
   for p in "${patches[@]}"; do # cwd is the kernel tree by now, as for the make calls below
@@ -61,8 +59,14 @@ apply_patches() {
     if err=$(git apply "$p" 2>&1); then # atomic: nothing is applied unless all of it applies
       success "  $name"
     elif git apply --reverse --check "$p" 2> /dev/null; then
+      [[ -z $(git rev-list '@{u}..HEAD') ]] || die "$name is in a local commit of the kernel tree, not upstream — keep it"
       die "$name is already in the kernel tree — it landed upstream, delete it"
     else
+      # An upstream commit with the same subject means it most likely landed edited
+      subject=$(sed -n 's/^Subject: \(\[[^]]*\] \)\{0,1\}//p' "$p")
+      date=$(sed -n 's/^Date: //p' "$p")
+      hash=$(git log -1 --format=%h --since="$date" -F --grep="$subject")
+      [[ -z $hash ]] || die "$name does not apply, but commit $hash has its subject — check whether it landed upstream in edited form"
       die "$name does not apply to this kernel version: $err"
     fi
   done
@@ -87,10 +91,10 @@ case "${1:-}" in
   -t) set -- "--tools" ;;
   -h) set -- "--help" ;;
   --clean | --list | --purge-old | --tools | --help) ;;
-  --* | -* | ?*) printf "ERROR: Unbekannte Option: %s\n\n" "${1}" >&2; usage >&2; exit 1 ;;
+  --* | -* | ?*) printf "ERROR: Unknown option: %s\n\n" "${1}" >&2; usage >&2; exit 1 ;;
 esac
 
-# --- Hilfe -------------------------------------------------------------------
+# --- Help --------------------------------------------------------------------
 if [[ "${1:-}" == "--help" ]]; then
   usage; exit 0
 fi
@@ -115,15 +119,18 @@ if [[ "${1:-}" == "--clean" ]]; then
   mkdir -p old
   rm -f ./*.log ./*.buildinfo ./*.changes ./linux-modules-*.deb
 
-  # Archive each artifact type, then keep only its 3 most recent (tail -n +4)
+  # Archive each artifact type, then keep only its most recent files: 3 debs per
+  # package, 4 configs (one build's base, .pre, .diff and final)
   # shellcheck disable=SC2012,SC2086  # filenames are controlled; $pat must glob
   for pat in "linux-image-*.deb" "linux-headers-*.deb" "linux-libc-dev_*.deb" "config-*"; do
+    keep=3
+    [[ $pat == config-* ]] && keep=4
     mv -f ./$pat old/ 2> /dev/null || true
-    ls -t old/$pat 2> /dev/null | tail -n +4 | xargs -r rm -f
+    ls -t old/$pat 2> /dev/null | tail -n +$((keep + 1)) | xargs -r rm -f || true
   done
 
   reset_kernel_src
-  success "Clean complete. Debs and configs archived to old/ (last 3 kept), kernel source reset."
+  success "Clean complete. Archived to old/ (last 3 debs per package, configs of the latest build), kernel source reset."
   exit 0
 fi
 
@@ -148,7 +155,7 @@ fi
 # --- Sanity checks -----------------------------------------------------------
 info "Current kernel: $(uname -r)"
 debug "Script directory: $SCRIPT_DIR"
-cd "$KERNEL_SRC_DIR" 2> /dev/null ||
+cd "$SCRIPT_DIR/$KERNEL_SRC_DIR" 2> /dev/null ||
   die "Kernel source directory '$KERNEL_SRC_DIR' not found. Did you clone the kernel sources?"
 
 # --- Verify GCC --------------------------------------------------------------
@@ -189,11 +196,8 @@ DEB_FILENAME="linux-modules-${KERNEL_VERSION}-${KERNEL_VERSION_LONG}-generic_${K
 # Find the exact .deb name (timestamp suffix varies)
 DEB_FILE=$(curl --connect-timeout 10 --max-time 30 -sL "$UBUNTU_BASE_URL" |
   grep -Eo "${DEB_FILENAME}.[0-9]{12}_amd64.deb" |
-  head -1) || warn "Could not find .deb for kernel ${KERNEL_VERSION} at ${UBUNTU_BASE_URL}"
-[[ -z "$DEB_FILE" ]] && {
-  warn "Could not find .deb ..."
-  DEB_FILE=""
-}
+  head -1) || true
+[[ -n "$DEB_FILE" ]] || warn "Could not find .deb for kernel ${KERNEL_VERSION} at ${UBUNTU_BASE_URL}"
 
 DEB_URL="${UBUNTU_BASE_URL}/amd64/${DEB_FILE}"
 debug "Ubuntu .deb URL: $DEB_URL"
@@ -240,6 +244,7 @@ FRAGMENT_FILES=(
   "${FRAGMENTS_DIR}/network-realtek.config"
   "${FRAGMENTS_DIR}/storage.config"
   "${FRAGMENTS_DIR}/hardware-desktop.config"
+  "${FRAGMENTS_DIR}/hardening.config"
 )
 
 info "Checking fragment symbols against the Kconfig tree..."
@@ -248,8 +253,9 @@ info "Checking fragment symbols against the Kconfig tree..."
 # transition happens. Such entries are silent no-ops — catch them here.
 _frag_syms=$(mktemp) _kconf_syms=$(mktemp)
 grep -hoE 'CONFIG_[A-Z0-9_]+' "${FRAGMENT_FILES[@]}" | sort -u > "$_frag_syms"
-grep -rhoE '^[[:space:]]*(menu)?config[[:space:]]+[A-Z0-9_]+' . \
-  --include=Kconfig --include='Kconfig.*' | awk '{print "CONFIG_"$NF}' | sort -u > "$_kconf_syms"
+git ls-files -z 'Kconfig' '*/Kconfig' 'Kconfig.*' '*/Kconfig.*' |
+  xargs -0 grep -hoE '^[[:space:]]*(menu)?config[[:space:]]+[A-Z0-9_]+' |
+  awk '{print "CONFIG_"$NF}' | sort -u > "$_kconf_syms"
 UNKNOWN_SYMS=$(comm -23 "$_frag_syms" "$_kconf_syms")
 rm -f "$_frag_syms" "$_kconf_syms"
 
@@ -261,16 +267,18 @@ info "Merging config fragments..."
 scripts/kconfig/merge_config.sh -m -Q .config "${FRAGMENT_FILES[@]}" \
   || die "Config fragment merge failed!"
 
+CONFIG_FILE="$SCRIPT_DIR/config-$KERNEL_VERSION-$LOCALVERSION"
+DIFF_FILE="$CONFIG_FILE.diff"
+
 info "Resolving Kconfig dependencies..."
-cp .config "$SCRIPT_DIR/config-$KERNEL_VERSION-$LOCALVERSION"
+cp .config "$CONFIG_FILE.pre"
 make CC=gcc olddefconfig || die "Configuration processing failed!"
 success "Fragments merged."
 echo
 
 info "Diffing: changes made by olddefconfig..."
-./scripts/diffconfig "$SCRIPT_DIR/config-$KERNEL_VERSION-$LOCALVERSION" .config \
-  > "$SCRIPT_DIR/config-$KERNEL_VERSION-$LOCALVERSION".diff || die "Diffing configs failed!"
-cp .config "$SCRIPT_DIR/config-$KERNEL_VERSION-$LOCALVERSION"
+./scripts/diffconfig "$CONFIG_FILE.pre" .config > "$DIFF_FILE" || die "Diffing configs failed!"
+cp .config "$CONFIG_FILE"
 success "Done."
 echo
 
@@ -286,7 +294,6 @@ if [[ -n "$UNKNOWN_SYMS" ]]; then
   echo
 fi
 
-DIFF_FILE="$SCRIPT_DIR/config-$KERNEL_VERSION-$LOCALVERSION.diff"
 FLIPS=$(grep -E ' (n -> [ym]|[ym] -> n)$' "$DIFF_FILE" || true)
 if [[ -n "$FLIPS" ]]; then
   warn "olddefconfig flipped the following options:"
