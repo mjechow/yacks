@@ -24,16 +24,14 @@ merged, and every runtime knob was re-measured on it: `preempt=full`, cpuidle
 at 4, 6 or 8 threads against a ~220 ns per-switch cost (see README decisions).
 What the measurements turned up along the way:
 
-- [ ] Send a `Tested-by` for the PROM21 600-series patch, and consider respinning
-      it as v3. Confirmed working on this X670E with 7.2.3-mirko-mars-4: both
-      `[1022:43f7]` functions bind `xhci-pci-prom21`, both auxiliary devices
-      appear, `sensors` reports 57.4 °C and 62.8 °C against 58 °C Tctl, and USB
-      is unaffected. That is a second board after the submitter's X670. The only
-      review comment on the thread asks for the new IDs to be added to the
-      `PCI IDs:` line in `Documentation/hwmon/prom21-xhci.rst`, so a v3 is owed
-      and nobody has sent one — worth doing, since the patch is carried locally
-      until it lands. Thread:
-      <https://patchwork.kernel.org/project/linux-usb/patch/20260820-xhci-pci-prom21-v2-1-638e5958fbbf@stevetech.au/>
+- [ ] Follow the PROM21 600-series patch v3 until it lands. Sent from the
+      `prom21-v3` branch in `linux/` (based on `usb/usb-next`, `git send-email`
+      via GMX), authorship kept with Stephen Horvath, carrying the
+      `Documentation/hwmon/prom21-xhci.rst` line the v2 review asked for and
+      `Cc: stable@vger.kernel.org # 7.2.x`. Answer review in the thread; a v4
+      starts from that branch. Once it reaches `linux-rolling-stable` the build
+      reports the patch as present — delete it then. Posting:
+      <https://patch.msgid.link/20261004002731.49927-1-mirko.jechow@gmx.de>
 - [ ] Find out where the `SCHED_CACHE` misplacement decision is made, then
       decide whether it is worth reporting. Reproducer: ten consecutive
       `tools/knobbench spread 24 8` runs with `llc_balancing/enabled=1` place
