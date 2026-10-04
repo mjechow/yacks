@@ -208,7 +208,7 @@ Currently carried:
 <!-- pyml disable line-length -->
 | Patch | Why |
 | --- | --- |
-| `0001-xhci-pci-add-amd-600-series-to-xhci-pci-prom21.patch` | Adds the 600-series chipset xHCI IDs (`43f7`, `43f9`, `43fa`) to the PROM21 glue, without which `SENSORS_PROM21_XHCI` never binds on this board. Posted to linux-usb 2026-08-20, not merged yet; verified here — both chipset dies report a plausible temperature and USB is unaffected |
+| `0001-xhci-pci-add-amd-600-series-to-xhci-pci-prom21.patch` | Adds the 600-series chipset xHCI IDs (`43f7`, `43f9`, `43fa`) to the PROM21 glue and its hwmon documentation, without which `SENSORS_PROM21_XHCI` never binds on this board. v3 posted to linux-usb 2026-10-04 with `Cc: stable`, not merged yet; verified here — both chipset dies report a plausible temperature and USB is unaffected |
 <!-- pyml enable line-length -->
 
 ## Config Fragment Order
