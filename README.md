@@ -169,7 +169,7 @@ related options so only the relevant files need to change when hardware changes.
 | --- | --- |
 | `base.config` | Compiler/LTO, zstd, zswap, scheduling, preemption, timer, security, debug, module signing |
 | `cpu-amd-zen4.config` | Ryzen 9 7950X3D: P-state, EDAC, SMBus, AES-NI, ACPI, PCIe, hardware monitoring |
-| `gpu-amd.config` | RX 9070 (RDNA 4): enables amdgpu + ROCm/HSA |
+| `gpu-amd.config` | RX 9070 (RDNA 4): enables amdgpu with Vulkan compute; ROCm/KFD (`HSA_AMD`) off |
 | `sound-usb.config` | The audio actually in use: USB only — the ALC4080 is wired to an internal USB port on X670E, not to the HDA bus |
 | `sound-hdmi.config` | Display and APU audio switched off, for both GPUs; also the iGPU's entire kernel-config surface. Swap the negatives to re-enable HDMI/DP sound |
 | `network-realtek.config` | RTL8125 2.5GbE, Bluetooth; disables WiFi, all other NIC vendors, Fujitsu Extended Socket, legacy USB network adapters; BBR/FQ/Cake |
@@ -387,6 +387,11 @@ CI. A compile catches more in a file this size than `clang-tidy` would.
   which stays registered in `FRAGMENT_FILES` so the symbols keep being validated
   on every build — a fragment left out of that array is checked by nothing and
   rots unnoticed until the day it is needed.
+- **GPU compute: Vulkan, no ROCm.** Inference runs on llama.cpp's Vulkan
+  backend (RADV), which needs only the DRM render node, so KFD (`HSA_AMD`) is
+  off and ROCm is not installed. `DRM_AMDGPU_USERPTR` is set explicitly in
+  `gpu-amd.config` because `HSA_AMD` no longer selects it, and RADV's
+  `VK_EXT_external_memory_host` depends on it.
 - **Game controllers:** disabled consistently rather than half-enabled. A
   controller attached later needs a kernel rebuild.
 - **Promontory 21 chipset temperature (`SENSORS_PROM21_XHCI`, new in 7.2):** on,
