@@ -203,13 +203,7 @@ context line is a lone space, and the two hooks together turn the final one into
 nothing and then delete it, after which `git apply` reports a corrupt patch. The
 bytes are the artifact.
 
-Currently carried:
-
-<!-- pyml disable line-length -->
-| Patch | Why |
-| --- | --- |
-| `0001-xhci-pci-add-amd-600-series-to-xhci-pci-prom21.patch` | Adds the 600-series chipset xHCI IDs (`43f7`, `43f9`, `43fa`) to the PROM21 glue and its hwmon documentation, without which `SENSORS_PROM21_XHCI` never binds on this board. v3 posted to linux-usb 2026-10-04 with `Cc: stable`, not merged yet; verified here — both chipset dies report a plausible temperature and USB is unaffected |
-<!-- pyml enable line-length -->
+No patch is carried at present; `patches/` exists only while one is.
 
 ## Config Fragment Order
 
@@ -222,7 +216,7 @@ Kconfig `select` and `depends` chains are always resolved correctly.
 ```text
 buildKernel.sh       Main build orchestrator
 fragments/           Composable Kconfig fragments (merged by merge_config.sh)
-patches/             Kernel patches, re-applied after every tree reset
+patches/             Kernel patches, re-applied after every tree reset (absent when empty)
 tools/               knobbench + measure.sh (runtime knob comparison)
 linux/               Kernel source tree (cloned separately, not tracked)
 ccache_kernel/       Dedicated ccache directory (generated)
@@ -395,12 +389,10 @@ CI. A compile catches more in a file this size than `clang-tidy` would.
 - **Game controllers:** disabled consistently rather than half-enabled. A
   controller attached later needs a kernel rebuild.
 - **Promontory 21 chipset temperature (`SENSORS_PROM21_XHCI`, new in 7.2):** on,
-  and it works — but only together with the patch in `patches/`. PROM21 is the IP
-  behind both the 6xx and 8xx chipsets, yet the `xhci-pci-prom21` glue claims only
-  the 800-series `[1022:43fc]`/`[1022:43fd]`, and both chipset xHCI functions on
-  this X670E are the 600-series `[1022:43f7]`. Without the patch no auxiliary
-  device is created, the controllers run on plain `xhci_hcd`, and the module is
-  dead weight. With it, both functions bind and `sensors` gains
+  and it works from 7.3.4. PROM21 is the IP behind both the 6xx and 8xx
+  chipsets; both chipset xHCI functions on this X670E are the 600-series
+  `[1022:43f7]`, which the `xhci-pci-prom21` glue claims since upstream commit
+  `29381088ac50`, backported to 7.3.4. Both functions bind and `sensors` gains
   `prom21_xhci-pci-1300` and `prom21_xhci-pci-1500` — one per die, 57.4 °C and
   62.8 °C at idle against 58 °C Tctl, so the conversion derived on 800-series
   silicon holds here. USB is unaffected: the devices behind both controllers
