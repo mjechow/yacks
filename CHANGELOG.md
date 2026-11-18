@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.7.0](https://github.com/mjechow/yacks/compare/5.6.0...5.7.0) (2026-11-18)
+
+
+### Features
+
+* **gpu:** drop ROCm/KFD, run GPU compute on Vulkan ([c220580](https://github.com/mjechow/yacks/commit/c2205800010a8b1ecadd8466da0dcd2d6ea7357b))
+
 ## [5.6.0](https://github.com/mjechow/yacks/compare/5.5.0...5.6.0) (2026-09-23)
 
 
